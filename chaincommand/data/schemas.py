@@ -1,0 +1,210 @@
+"""Pydantic data models for the supply chain domain."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional
+from uuid import uuid4
+
+from pydantic import BaseModel, Field
+
+
+# ── Enums ────────────────────────────────────────────────
+
+class ProductCategory(str, Enum):
+    ELECTRONICS = "electronics"
+    FOOD = "food"
+    PHARMA = "pharma"
+    INDUSTRIAL = "industrial"
+    APPAREL = "apparel"
+
+
+class OrderStatus(str, Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    SHIPPED = "shipped"
+    DELIVERED = "delivered"
+    CANCELLED = "cancelled"
+
+
+class AlertSeverity(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class ApprovalStatus(str, Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    AUTO_APPROVED = "auto_approved"
+
+
+# ── Core Domain Models ───────────────────────────────────
+
+class Product(BaseModel):
+    product_id: str = Field(default_factory=lambda: f"PRD-{uuid4().hex[:8]}")
+    name: str
+    category: ProductCategory
+    unit_cost: float
+    selling_price: float
+    lead_time_days: int = 7
+    min_order_qty: int = 100
+    current_stock: float = 0.0
+    reorder_point: float = 0.0
+    safety_stock: float = 0.0
+    daily_demand_avg: float = 0.0
+    daily_demand_std: float = 0.0
+
+
+class Supplier(BaseModel):
+    supplier_id: str = Field(default_factory=lambda: f"SUP-{uuid4().hex[:8]}")
+    name: str
+    reliability_score: float = 0.85  # 0-1
+    lead_time_mean: float = 7.0
+    lead_time_std: float = 2.0
+    cost_multiplier: float = 1.0
+    capacity: float = 10000.0
+    products: List[str] = Field(default_factory=list)  # product_ids
+    defect_rate: float = 0.02
+    on_time_rate: float = 0.90
+    is_active: bool = True
+
+
+class DemandRecord(BaseModel):
+    date: datetime
+    product_id: str
+    quantity: float
+    is_promotion: bool = False
+    is_holiday: bool = False
+    temperature: Optional[float] = None
+    day_of_week: int = 0
+    month: int = 1
+
+
+class InventorySnapshot(BaseModel):
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    product_id: str
+    on_hand: float
+    in_transit: float = 0.0
+    allocated: float = 0.0
+    available: float = 0.0
+    days_of_supply: float = 0.0
+
+
+class PurchaseOrder(BaseModel):
+    po_id: str = Field(default_factory=lambda: f"PO-{uuid4().hex[:8]}")
+    supplier_id: str
+    product_id: str
+    quantity: float
+    unit_cost: float
+    total_cost: float = 0.0
+    status: OrderStatus = OrderStatus.PENDING
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    expected_delivery: Optional[datetime] = None
+    approval_status: ApprovalStatus = ApprovalStatus.PENDING
+    approved_by: Optional[str] = None
+
+
+class AnomalyRecord(BaseModel):
+    anomaly_id: str = Field(default_factory=lambda: f"ANM-{uuid4().hex[:8]}")
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    anomaly_type: str  # demand_spike, cost_anomaly, lead_time_anomaly, quality_issue
+    product_id: Optional[str] = None
+    supplier_id: Optional[str] = None
+    severity: AlertSeverity = AlertSeverity.MEDIUM
+    score: float = 0.0  # anomaly score from model
+    description: str = ""
+    resolved: bool = False
+
+
+class MarketIntelligence(BaseModel):
+    intel_id: str = Field(default_factory=lambda: f"MKT-{uuid4().hex[:8]}")
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    source: str = "simulated"
+    topic: str = ""
+    summary: str = ""
+    impact_score: float = 0.0  # -1 to 1
+    affected_products: List[str] = Field(default_factory=list)
+    raw_data: Dict[str, Any] = Field(default_factory=dict)
+
+
+# ── KPI Models ───────────────────────────────────────────
+
+class KPISnapshot(BaseModel):
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    otif: float = 0.0  # On-Time In-Full
+    fill_rate: float = 0.0
+    mape: float = 0.0  # Mean Absolute Percentage Error
+    dsi: float = 0.0  # Days Sales of Inventory
+    stockout_count: int = 0
+    total_inventory_value: float = 0.0
+    carrying_cost: float = 0.0
+    order_cycle_time: float = 0.0
+    perfect_order_rate: float = 0.0
+    inventory_turnover: float = 0.0
+    backorder_rate: float = 0.0
+    supplier_defect_rate: float = 0.0
+
+
+# ── Event / Alert Models ────────────────────────────────
+
+class SupplyChainEvent(BaseModel):
+    event_id: str = Field(default_factory=lambda: f"EVT-{uuid4().hex[:8]}")
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    event_type: str
+    severity: AlertSeverity = AlertSeverity.MEDIUM
+    source_agent: str = ""
+    description: str = ""
+    data: Dict[str, Any] = Field(default_factory=dict)
+    resolved: bool = False
+    resolution: Optional[str] = None
+
+
+class HumanApprovalRequest(BaseModel):
+    request_id: str = Field(default_factory=lambda: f"APR-{uuid4().hex[:8]}")
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    request_type: str  # purchase_order, inventory_adjustment, supplier_change
+    description: str = ""
+    estimated_cost: float = 0.0
+    risk_level: AlertSeverity = AlertSeverity.MEDIUM
+    data: Dict[str, Any] = Field(default_factory=dict)
+    status: ApprovalStatus = ApprovalStatus.PENDING
+    decided_at: Optional[datetime] = None
+    decided_by: Optional[str] = None
+    reason: Optional[str] = None
+
+
+# ── Agent Action Models ──────────────────────────────────
+
+class AgentAction(BaseModel):
+    action_id: str = Field(default_factory=lambda: f"ACT-{uuid4().hex[:8]}")
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    agent_name: str
+    action_type: str
+    description: str = ""
+    input_data: Dict[str, Any] = Field(default_factory=dict)
+    output_data: Dict[str, Any] = Field(default_factory=dict)
+    success: bool = True
+    error: Optional[str] = None
+
+
+class ForecastResult(BaseModel):
+    product_id: str
+    forecast_date: datetime
+    predicted_demand: float
+    confidence_lower: float = 0.0
+    confidence_upper: float = 0.0
+    model_used: str = "ensemble"
+    mape: float = 0.0
+
+
+class OptimizationResult(BaseModel):
+    product_id: str
+    recommended_reorder_point: float
+    recommended_safety_stock: float
+    recommended_order_qty: float
+    expected_cost_saving: float = 0.0
+    method: str = "genetic_algorithm"

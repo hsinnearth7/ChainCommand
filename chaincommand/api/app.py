@@ -1,0 +1,103 @@
+"""FastAPI application for ChainCommand dashboard and control."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from contextlib import asynccontextmanager
+from datetime import datetime
+from typing import AsyncGenerator
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+
+from ..config import settings
+from ..utils.logging_config import get_logger
+
+log = get_logger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Startup / shutdown lifecycle."""
+    from ..orchestrator import get_orchestrator
+
+    orchestrator = get_orchestrator()
+    await orchestrator.initialize()
+    log.info("app_startup_complete")
+    yield
+    await orchestrator.shutdown()
+    log.info("app_shutdown_complete")
+
+
+app = FastAPI(
+    title="ChainCommand",
+    description="Autonomous Supply Chain Optimizer — AI Agent Team",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+# CORS — allow dashboard frontends
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ── Register routers ────────────────────────────────────────
+from .routes.dashboard import router as dashboard_router  # noqa: E402
+from .routes.control import router as control_router  # noqa: E402
+
+app.include_router(dashboard_router, prefix="/api")
+app.include_router(control_router, prefix="/api")
+
+
+@app.get("/")
+async def root():
+    return {
+        "name": "ChainCommand",
+        "version": "1.0.0",
+        "status": "running",
+        "docs": "/docs",
+    }
+
+
+def _json_serial(obj):
+    """JSON serializer for datetime objects."""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    raise TypeError(f"Type {type(obj)} not serializable")
+
+
+@app.websocket("/ws/live")
+async def websocket_live(websocket: WebSocket):
+    """Live event stream via WebSocket (top-level route)."""
+    await websocket.accept()
+    log.info("ws_client_connected")
+
+    try:
+        seen_ids: set[str] = set()
+        while True:
+            await asyncio.sleep(1)
+            from ..orchestrator import _runtime
+
+            if not _runtime.event_bus:
+                continue
+
+            events = _runtime.event_bus.recent_events[-20:]
+            for evt in events:
+                eid = evt.event_id
+                if eid and eid not in seen_ids:
+                    seen_ids.add(eid)
+                    data = evt.model_dump()
+                    text = json.dumps(data, default=_json_serial)
+                    await websocket.send_text(text)
+            # Cap memory
+            if len(seen_ids) > 5000:
+                seen_ids = set(list(seen_ids)[-2000:])
+    except WebSocketDisconnect:
+        log.info("ws_client_disconnected")
+    except Exception as exc:
+        log.error("ws_error", error=str(exc))
