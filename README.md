@@ -86,61 +86,29 @@ The system runs fully autonomously in mock mode (no API keys needed), generating
 
 ## System Architecture
 
-```
-              ┌──────────────────────────────────────────────────────────────────────┐
-              │                    ChainCommand Architecture                         │
-              └──────────────────────────────────────────────────────────────────────┘
+### Diagram 1 — System Architecture Overview
+![System Architecture Overview](architecture-diagrams/Diagram%201%20%E2%80%94%20System%20Architecture%20Overview.png)
 
-  ┌─────────────────────────────────────────────────────────────────────────────────┐
-  │                         ORCHESTRATION LAYER                                     │
-  │  ┌──────────────────────┐    ┌──────────────────────┐                           │
-  │  │   Coordinator Agent  │    │   Reporter Agent      │                           │
-  │  │   (CSCO — conflict   │    │   (structured reports  │                           │
-  │  │    arbitration, HITL) │    │    & dashboard data)   │                           │
-  │  └──────────┬───────────┘    └──────────┬───────────┘                           │
-  └─────────────┼───────────────────────────┼───────────────────────────────────────┘
-                │          ▲                │          ▲
-                ▼          │                ▼          │
-  ┌─────────────────────────────────────────────────────────────────────────────────┐
-  │                          STRATEGIC LAYER (Weekly/Monthly)                        │
-  │  ┌──────────────────────┐    ┌──────────────────────┐                           │
-  │  │ Demand Forecaster    │    │ Strategic Planner     │                           │
-  │  │ (LSTM+XGB ensemble)  │    │ (consensus mechanism) │                           │
-  │  └──────────┬───────────┘    └──────────┬───────────┘                           │
-  └─────────────┼───────────────────────────┼───────────────────────────────────────┘
-                │          ▲                │          ▲
-                ▼          │                ▼          │
-  ┌──────────────────────────────────────────────────────────────────────────────────┐
-  │                          TACTICAL LAYER (Daily)                                  │
-  │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐               │
-  │  │ Inventory         │  │ Supplier          │  │ Logistics        │               │
-  │  │ Optimizer         │  │ Manager           │  │ Coordinator      │               │
-  │  │ (GA+DQN hybrid)  │  │ (HITL gates)      │  │ (order tracking) │               │
-  │  └────────┬─────────┘  └────────┬─────────┘  └────────┬─────────┘               │
-  └───────────┼─────────────────────┼─────────────────────┼──────────────────────────┘
-              │          ▲          │          ▲          │          ▲
-              ▼          │          ▼          │          ▼          │
-  ┌──────────────────────────────────────────────────────────────────────────────────┐
-  │                          OPERATIONAL LAYER (Real-time)                           │
-  │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐               │
-  │  │ Anomaly Detector  │  │ Risk Assessor    │  │ Market           │               │
-  │  │ (Isolation Forest) │  │ (depth/breadth/  │  │ Intelligence     │               │
-  │  │                    │  │  criticality)    │  │ (trend scanning) │               │
-  │  └────────┬─────────┘  └────────┬─────────┘  └────────┬─────────┘               │
-  └───────────┼─────────────────────┼─────────────────────┼──────────────────────────┘
-              │                     │                     │
-              ▼                     ▼                     ▼
-  ┌──────────────────────────────────────────────────────────────────────────────────┐
-  │                              EVENT BUS (Pub/Sub)                                 │
-  │  forecast_updated │ reorder_triggered │ anomaly_detected │ po_created │ tick ... │
-  └──────────────────────────────────────────────────────────────────────────────────┘
-              │                     │                     │
-              ▼                     ▼                     ▼
-  ┌──────────────┐     ┌───────────────┐     ┌──────────────────┐
-  │  KPI Engine  │     │ Proactive     │     │  FastAPI Server  │
-  │  (12 metrics)│     │ Monitor       │     │  (REST + WS)     │
-  └──────────────┘     └───────────────┘     └──────────────────┘
-```
+### Diagram 2 — 10-Agent 8-Step Decision Cycle
+![10-Agent 8-Step Decision Cycle](architecture-diagrams/Diagram%202%20%E2%80%94%2010-Agent%208-Step%20Decision%20Cycle.png)
+
+### Diagram 3 — Event-Driven Sequence Diagram
+![Event-Driven Sequence Diagram](architecture-diagrams/Diagram%203%20%E2%80%94%20Event-Driven%20Sequence%20Diagram.png)
+
+### Diagram 4 — ML Pipeline
+![ML Pipeline](architecture-diagrams/Diagram%204%20%E2%80%94%20ML%20Pipeline.png)
+
+### Diagram 5 — KPI Monitoring Loop
+![KPI Monitoring Loop](architecture-diagrams/Diagram%205%20%E2%80%94%20KPI%20Monitoring%20Loop.png)
+
+### Diagram 6 — HITL Human-in-the-Loop Approval Flow
+![HITL Approval Flow](architecture-diagrams/Diagram%206%20%E2%80%94%20HITL%20Human-in-the-Loop%20Approval%20Flow.png)
+
+### Diagram 7 — API Endpoint Overview
+![API Endpoint Overview](architecture-diagrams/Diagram%207%20%E2%80%94%20API%20Endpoint%20Overview.png)
+
+### Diagram 8 — Tech Stack
+![Tech Stack](architecture-diagrams/Diagram%208%20%E2%80%94%20Tech%20Stack.png)
 
 ---
 
