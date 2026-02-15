@@ -181,17 +181,17 @@ chaincommand/
 │       ├── dashboard.py                 # KPI, inventory, agents, events, forecast, approvals, WebSocket
 │       └── control.py                   # Simulation start/stop/speed, agent triggers
 │
-├── utils/                               # Utilities
-│   ├── __init__.py
-│   └── logging_config.py               # Structlog configuration
-│
-└── tests/                               # Test suite (skeleton)
+└── utils/                               # Utilities
     ├── __init__.py
-    ├── test_agents/
-    ├── test_api/
-    ├── test_integration/
-    ├── test_kpi/
-    └── test_models/
+    └── logging_config.py               # Structlog configuration
+
+tests/                                       # Test suite (skeleton)
+├── __init__.py
+├── test_agents/
+├── test_api/
+├── test_integration/
+├── test_kpi/
+└── test_models/
 ```
 
 ---
@@ -226,8 +226,8 @@ chaincommand/
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-repo/chaincommand.git
-cd chaincommand
+git clone https://github.com/hsinnearth7/ChainCommand.git
+cd ChainCommand
 
 # Install dependencies
 pip install pydantic pydantic-settings numpy pandas structlog
