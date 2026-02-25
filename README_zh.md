@@ -16,6 +16,8 @@
 <img src="https://img.shields.io/badge/Architecture-Event%20Driven-orange?style=for-the-badge" />
 <img src="https://img.shields.io/badge/ML%20Models-LSTM%20%2B%20XGBoost%20%2B%20GA%20%2B%20DQN-green?style=for-the-badge" />
 <img src="https://img.shields.io/badge/API-REST%20%2B%20WebSocket-purple?style=for-the-badge" />
+<img src="https://img.shields.io/badge/AWS-S3%20%7C%20Redshift%20%7C%20Athena%20%7C%20QuickSight-FF9900?style=for-the-badge" />
+<img src="https://img.shields.io/badge/Tests-47%20Passed-brightgreen?style=for-the-badge" />
 
 </div>
 
@@ -41,6 +43,8 @@
 - [API 參考](#api-參考)
 - [決策週期演練](#決策週期演練)
 - [研究基礎](#研究基礎)
+- [AWS 整合（可選）](#aws-整合可選)
+- [測試](#測試)
 - [路線圖與未來工作](#路線圖與未來工作)
 - [技術棧](#技術棧)
 - [貢獻指南](#貢獻指南)
@@ -76,12 +80,14 @@
 - **集成預測** — LSTM + XGBoost 動態反向 MAPE 加權，根據各模型準確度自動調整
 - **混合優化** — 遺傳演算法（GA）全域參數搜索 + DQN 強化學習動態庫存決策
 - **異常偵測** — Isolation Forest + Z-score 偵測需求突變、成本異常、前置時間偏差
-- **HITL 審批閘門** — 訂單 >$50K 需人工審批；<$10K 自動批准；可透過環境變數配置
+- **HITL 審批閘門** — 訂單 ≥$50K 需人工審批（HIGH）；$10K–$50K 待人工審核（MEDIUM）；<$10K 自動批准；可透過環境變數配置
 - **主動監控** — 持續的 tick 式掃描，偵測低庫存、KPI 違反、交貨延遲和異常
 - **12 項 KPI 指標** — OTIF、滿足率、MAPE、DSI、缺貨次數、庫存周轉率、持有成本、完美訂單率、缺貨率、供應商缺陷率等
 - **REST API + WebSocket** — 完整 FastAPI 儀表板，支援即時事件串流、代理觸發和模擬控制
 - **Rich 終端 UI** — Demo 模式搭配動態進度條、色彩 KPI 儀表板、代理層級樹狀圖、嚴重度標記事件日誌和步驟耗時圖表（基於 `rich`）
 - **Mock 優先設計** — 完整系統可在無 API 金鑰下運行，使用規則型 Mock LLM
+- **AWS 持久化（可選）** — Strategy Pattern 後端，整合 S3、Redshift、Athena、QuickSight；未啟用時預設為零開銷 NullBackend
+- **47 項單元測試** — AWS 後端完整測試覆蓋，使用 mocked boto3/redshift-connector（無需真實 AWS 憑證）
 
 ---
 
@@ -210,7 +216,7 @@ chaincommand/
 │   ├── app.py                           # FastAPI 應用（CORS、生命週期管理）
 │   └── routes/
 │       ├── __init__.py
-│       ├── dashboard.py                 # KPI、庫存、代理、事件、預測、審批、WebSocket
+│       ├── dashboard.py                 # KPI、庫存、代理、事件、預測、審批、AWS、WebSocket
 │       └── control.py                   # 模擬啟動/停止/速度、代理觸發
 │
 ├── ui/                                  # Rich 終端 UI（Demo 模式）
@@ -218,14 +224,30 @@ chaincommand/
 │   ├── theme.py                        # 視覺常數、顏色、層級標籤
 │   └── console.py                      # ChainCommandUI（進度條、KPI 儀表板、樹狀圖）
 │
+├── aws/                                 # AWS 持久化後端（可選）
+│   ├── __init__.py                      # 套件初始化，匯出 get_backend()
+│   ├── config.py                        # AWS 配置輔助工具
+│   ├── backend.py                       # PersistenceBackend ABC, NullBackend, 工廠
+│   ├── aws_backend.py                   # AWSBackend — 組裝所有客戶端
+│   ├── s3_client.py                     # S3 上傳/下載（Parquet, JSONL, JSON）
+│   ├── redshift_client.py              # Redshift DDL, COPY, 查詢
+│   ├── athena_client.py                # Athena 外部表、ad-hoc 查詢
+│   └── quicksight_client.py            # QuickSight 數據集 + 儀表板
+│
 └── utils/                               # 工具程式
     ├── __init__.py
     └── logging_config.py               # structlog 配置
 
-tests/                                       # 測試套件（骨架）
+tests/                                       # 測試套件
 ├── __init__.py
 ├── test_agents/
 ├── test_api/
+├── test_aws/                                # AWS 後端測試（全部 mocked）
+│   ├── test_backend.py                      # NullBackend, get_backend(), AWSBackend
+│   ├── test_s3_client.py                    # S3Client 操作
+│   ├── test_redshift_client.py              # RedshiftClient DDL + 查詢
+│   ├── test_athena_client.py                # AthenaClient 外部表 + 輪詢
+│   └── test_quicksight_client.py            # QuickSightClient 數據集 + 儀表板
 ├── test_integration/
 ├── test_kpi/
 └── test_models/
@@ -271,6 +293,12 @@ pip install pydantic pydantic-settings numpy pandas structlog rich
 
 # API 伺服器模式（可選）
 pip install fastapi uvicorn
+
+# AWS 持久化後端（可選）
+pip install boto3 redshift-connector pyarrow
+
+# 執行測試（可選）
+pip install pytest pytest-asyncio
 ```
 
 ### 快速開始 — Demo 模式
@@ -487,10 +515,10 @@ class BaseAgent(ABC):
 協調器管理完整的生命週期：
 
 ```
-initialize()  → 生成數據 → 訓練 ML 模型 → 建立代理 → 配置事件訂閱
-run_cycle()   → 8 步決策週期，跨所有代理層
+initialize()  → 生成數據 → 訓練 ML 模型 → 建立代理 → 配置事件訂閱 → 初始化持久化後端
+run_cycle()   → 8 步決策週期，跨所有代理層 → 將週期數據持久化至後端
 run_loop()    → 持續模擬，可配置速度
-shutdown()    → 清理關閉監控器、事件匯流排和代理
+shutdown()    → 清理持久化後端 → 停止監控器 → 停止事件匯流排
 ```
 
 ---
@@ -510,6 +538,10 @@ shutdown()    → 清理關閉監控器、事件匯流排和代理
 | `GET` | `/api/forecast/{product_id}` | 30 天需求預測 |
 | `GET` | `/api/approvals/pending` | 待處理 HITL 審批請求 |
 | `POST` | `/api/approval/{id}/decide` | 批准或拒絕審批請求 |
+| `GET` | `/api/aws/status` | AWS 後端狀態與配置 |
+| `GET` | `/api/aws/kpi-trend/{metric}` | 從 Redshift 查詢 KPI 趨勢 |
+| `GET` | `/api/aws/query` | 透過 Athena 的 ad-hoc 事件查詢 |
+| `GET` | `/api/aws/dashboards` | 列出 QuickSight 儀表板 |
 | `WS` | `/ws/live` | 即時事件串流 |
 
 ### 控制端點
@@ -545,7 +577,7 @@ shutdown()    → 清理關閉監控器、事件匯流排和代理
 
 步驟 4: 供應商管理
   └── 供應商管理代理 → 評估供應商、建立 5 筆採購單
-                       → HITL 閘門：>$50K 需人工審批
+                       → HITL 閘門：≥$50K 需人工審批，$10K-$50K 待審核
 
 步驟 5: 物流
   └── 物流協調代理  → 追蹤 5 筆活躍出貨、模擬訂單進度
@@ -576,7 +608,108 @@ shutdown()    → 清理關閉監控器、事件匯流排和代理
 
 ---
 
+## AWS 整合（可選）
+
+ChainCommand 支援可選的 AWS 持久化後端，採用 **Strategy Pattern** 設計。啟用後，週期數據將持久化至 S3/Redshift，並可透過 Athena 和 QuickSight 進行分析——完全不影響預設的記憶體模式。
+
+### 架構
+
+```
+PersistenceBackend (ABC)
+  ├── NullBackend        # 預設 — 無操作，零開銷
+  └── AWSBackend         # S3 + Redshift + Athena + QuickSight
+        ├── S3Client         # 上傳 Parquet/JSONL/JSON
+        ├── RedshiftClient   # 從 S3 COPY，SQL 查詢
+        ├── AthenaClient     # S3 外部表，ad-hoc 查詢
+        └── QuickSightClient # 數據集 + 儀表板
+```
+
+### 環境變數
+
+```bash
+# 啟用 AWS 後端
+CC_AWS_ENABLED=true
+CC_AWS_REGION=ap-northeast-1
+
+# S3
+CC_AWS_S3_BUCKET=chaincommand-data
+CC_AWS_S3_PREFIX=supply-chain/
+
+# Redshift
+CC_AWS_REDSHIFT_HOST=my-cluster.abc123.redshift.amazonaws.com
+CC_AWS_REDSHIFT_PORT=5439
+CC_AWS_REDSHIFT_DB=chaincommand
+CC_AWS_REDSHIFT_USER=admin
+CC_AWS_REDSHIFT_PASSWORD=secret
+CC_AWS_REDSHIFT_IAM_ROLE=arn:aws:iam::123456789012:role/RedshiftS3Access
+
+# Athena
+CC_AWS_ATHENA_DATABASE=chaincommand
+CC_AWS_ATHENA_OUTPUT=s3://chaincommand-data/athena-results/
+
+# QuickSight
+CC_AWS_QUICKSIGHT_ACCOUNT_ID=123456789012
+```
+
+### 設定步驟
+
+1. **S3 儲存桶** — 在目標區域建立 `chaincommand-data`（或自訂名稱）
+2. **Redshift 叢集** — 佈建叢集並建立具有 S3 讀取權限的 IAM 角色以用於 COPY
+3. **Athena 工作群組** — 確保預設工作群組（或自訂群組）已配置輸出位置
+4. **QuickSight** — （可選）設定 QuickSight 帳戶以建立儀表板
+5. **設定環境變數** — 配置上述所有 `CC_AWS_*` 變數
+6. **啟動 ChainCommand** — 後端會在首次運行時自動初始化表格和外部表
+
+### AWS API 端點
+
+| 方法 | 端點 | 說明 |
+|------|------|------|
+| `GET` | `/api/aws/status` | AWS 連線狀態與配置 |
+| `GET` | `/api/aws/kpi-trend/{metric}?days=30` | 從 Redshift 查詢 KPI 趨勢 |
+| `GET` | `/api/aws/query?event_type=low_stock&limit=50` | 透過 Athena 的 ad-hoc 事件查詢 |
+| `GET` | `/api/aws/dashboards` | 列出 QuickSight 儀表板 |
+
+### 額外依賴
+
+```bash
+pip install boto3 redshift-connector pyarrow
+```
+
+---
+
+## 測試
+
+```bash
+# 執行所有 AWS 後端測試（47 項測試，無需真實 AWS 憑證）
+python -m pytest tests/test_aws/ -v
+
+# 執行特定測試模組
+python -m pytest tests/test_aws/test_backend.py -v       # NullBackend, 工廠, AWSBackend
+python -m pytest tests/test_aws/test_s3_client.py -v     # S3 上傳/下載操作
+python -m pytest tests/test_aws/test_redshift_client.py -v  # Redshift DDL, COPY, 查詢
+python -m pytest tests/test_aws/test_athena_client.py -v # Athena 外部表, 輪詢
+python -m pytest tests/test_aws/test_quicksight_client.py -v  # QuickSight 數據集, 儀表板
+```
+
+| 測試模組 | 測試數 | 覆蓋範圍 |
+|---------|--------|---------|
+| `test_backend.py` | 17 | NullBackend 無操作、`get_backend()` 工廠、AWSBackend 持久化/查詢 |
+| `test_s3_client.py` | 7 | 上傳 Parquet/JSONL/JSON、列出物件、下載、key 格式化 |
+| `test_redshift_client.py` | 8 | DDL 建立、COPY 指令、SQL 查詢、KPI 插入、連線 |
+| `test_athena_client.py` | 9 | 資料庫/表建立、查詢輪詢、結果解析、逾時 |
+| `test_quicksight_client.py` | 6 | 數據來源、數據集、儀表板建立、列出儀表板 |
+| **合計** | **47** | 所有 AWS 客戶端皆使用 `unittest.mock` 完全模擬 |
+
+所有測試使用 mocked `boto3` 和 `redshift_connector` — 無需真實 AWS 帳戶或憑證。
+
+---
+
 ## 路線圖與未來工作
+
+### 已完成
+
+- [x] **AWS 持久化後端** — S3、Redshift、Athena、QuickSight 整合，透過 Strategy Pattern（`NullBackend` / `AWSBackend`）
+- [x] **單元測試套件（AWS）** — 47 項 pytest 測試，使用 mocked boto3/redshift-connector，完整覆蓋所有 AWS 客戶端
 
 ### 計畫中的增強功能
 
@@ -615,6 +748,7 @@ shutdown()    → 清理關閉監控器、事件匯流排和代理
 | **終端 UI** | rich（進度條、表格、樹狀圖） |
 | **日誌** | structlog（結構化，ISO 8601） |
 | **LLM 客戶端** | openai（可選）、httpx（Ollama，可選） |
+| **AWS（可選）** | boto3, redshift-connector, pyarrow（S3, Redshift, Athena, QuickSight） |
 | **配置管理** | 環境變數（CC_ 前綴）、.env 檔案 |
 
 ### 依賴
@@ -638,6 +772,11 @@ httpx>=0.24.0          # 用於 CC_LLM_MODE=ollama
 
 # ML（可選，增強異常偵測）
 scikit-learn>=1.0.0    # 用於 Isolation Forest
+
+# AWS 後端（可選，用於 CC_AWS_ENABLED=true）
+boto3>=1.28.0          # S3, Athena, QuickSight
+redshift-connector>=2.0.0  # Redshift
+pyarrow>=12.0.0        # Parquet 支援
 ```
 
 ---

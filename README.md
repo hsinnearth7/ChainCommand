@@ -16,6 +16,8 @@
 <img src="https://img.shields.io/badge/Architecture-Event%20Driven-orange?style=for-the-badge" />
 <img src="https://img.shields.io/badge/ML%20Models-LSTM%20%2B%20XGBoost%20%2B%20GA%20%2B%20DQN-green?style=for-the-badge" />
 <img src="https://img.shields.io/badge/API-REST%20%2B%20WebSocket-purple?style=for-the-badge" />
+<img src="https://img.shields.io/badge/AWS-S3%20%7C%20Redshift%20%7C%20Athena%20%7C%20QuickSight-FF9900?style=for-the-badge" />
+<img src="https://img.shields.io/badge/Tests-47%20Passed-brightgreen?style=for-the-badge" />
 
 </div>
 
@@ -41,6 +43,8 @@
 - [API Reference](#api-reference)
 - [Decision Cycle Walkthrough](#decision-cycle-walkthrough)
 - [Research Foundations](#research-foundations)
+- [AWS Integration (Optional)](#aws-integration-optional)
+- [Testing](#testing)
 - [Roadmap & Future Work](#roadmap--future-work)
 - [Tech Stack](#tech-stack)
 - [Contributing](#contributing)
@@ -76,12 +80,14 @@ The entire system runs from a single command (`python -m chaincommand --demo`) w
 - **Ensemble Forecasting** — LSTM + XGBoost with dynamic inverse-MAPE weighting that auto-adjusts based on per-model accuracy
 - **Hybrid Optimization** — Genetic Algorithm for global parameter search + DQN reinforcement learning for dynamic inventory decisions
 - **Anomaly Detection** — Isolation Forest + Z-score detection for demand spikes, cost anomalies, and lead-time deviations
-- **HITL Approval Gates** — Orders >$50K require human approval; <$10K auto-approved; configurable via environment variables
+- **HITL Approval Gates** — Orders >=$50K require human approval (HIGH); $10K–$50K pending human review (MEDIUM); <$10K auto-approved; configurable via environment variables
 - **Proactive Monitoring** — Continuous tick-based scanning for low stock, KPI violations, delivery delays, and anomalies
 - **12 KPI Metrics** — OTIF, fill rate, MAPE, DSI, stockout count, inventory turnover, carrying cost, perfect order rate, backorder rate, supplier defect rate, and more
 - **REST API + WebSocket** — Full FastAPI dashboard with live event streaming, agent triggers, and simulation control
 - **Rich Terminal UI** — Demo mode with animated progress bars, color-coded KPI dashboard, agent layer tree, event log with severity highlighting, and step timing charts (powered by `rich`)
 - **Mock-First Design** — Complete system runs without any API keys using rule-based mock LLM
+- **AWS Persistence (Optional)** — Strategy Pattern backend with S3, Redshift, Athena, and QuickSight integration; defaults to zero-overhead NullBackend when disabled
+- **47 Unit Tests** — Full test coverage for AWS backend with mocked boto3/redshift-connector (no real AWS credentials needed)
 
 ---
 
@@ -179,7 +185,7 @@ chaincommand/
 │   ├── app.py                           # FastAPI app with CORS & lifespan
 │   └── routes/
 │       ├── __init__.py
-│       ├── dashboard.py                 # KPI, inventory, agents, events, forecast, approvals, WebSocket
+│       ├── dashboard.py                 # KPI, inventory, agents, events, forecast, approvals, AWS, WebSocket
 │       └── control.py                   # Simulation start/stop/speed, agent triggers
 │
 ├── ui/                                  # Rich Terminal UI (demo mode)
@@ -187,14 +193,30 @@ chaincommand/
 │   ├── theme.py                        # Visual constants, colors, layer badges
 │   └── console.py                      # ChainCommandUI (progress bars, KPI dashboard, trees)
 │
+├── aws/                                 # AWS Persistence Backend (optional)
+│   ├── __init__.py                      # Package init, export get_backend()
+│   ├── config.py                        # AWS configuration helpers
+│   ├── backend.py                       # PersistenceBackend ABC, NullBackend, factory
+│   ├── aws_backend.py                   # AWSBackend — assembles all clients
+│   ├── s3_client.py                     # S3 upload/download (Parquet, JSONL, JSON)
+│   ├── redshift_client.py              # Redshift DDL, COPY, queries
+│   ├── athena_client.py                # Athena external tables, ad-hoc queries
+│   └── quicksight_client.py            # QuickSight datasets + dashboards
+│
 └── utils/                               # Utilities
     ├── __init__.py
     └── logging_config.py               # Structlog configuration
 
-tests/                                       # Test suite (skeleton)
+tests/                                       # Test suite
 ├── __init__.py
 ├── test_agents/
 ├── test_api/
+├── test_aws/                                # AWS backend tests (all mocked)
+│   ├── test_backend.py                      # NullBackend, get_backend(), AWSBackend
+│   ├── test_s3_client.py                    # S3Client operations
+│   ├── test_redshift_client.py              # RedshiftClient DDL + queries
+│   ├── test_athena_client.py                # AthenaClient external tables + polling
+│   └── test_quicksight_client.py            # QuickSightClient datasets + dashboards
 ├── test_integration/
 ├── test_kpi/
 └── test_models/
@@ -240,6 +262,12 @@ pip install pydantic pydantic-settings numpy pandas structlog rich
 
 # For API server mode (optional)
 pip install fastapi uvicorn
+
+# For AWS persistence backend (optional)
+pip install boto3 redshift-connector pyarrow
+
+# For running tests (optional)
+pip install pytest pytest-asyncio
 ```
 
 ### Quick Start — Demo Mode
@@ -456,10 +484,10 @@ See [API Reference](#api-reference) below.
 The orchestrator manages the complete lifecycle:
 
 ```
-initialize()  → Generate data → Train ML models → Create agents → Wire event subscriptions
-run_cycle()   → 8-step decision cycle across all agent layers
+initialize()  → Generate data → Train ML models → Create agents → Wire events → Init persistence backend
+run_cycle()   → 8-step decision cycle across all agent layers → Persist cycle data to backend
 run_loop()    → Continuous simulation with configurable speed
-shutdown()    → Clean teardown of monitor, event bus, and agents
+shutdown()    → Teardown persistence backend → Stop monitor → Stop event bus
 ```
 
 ---
@@ -479,6 +507,10 @@ shutdown()    → Clean teardown of monitor, event bus, and agents
 | `GET` | `/api/forecast/{product_id}` | 30-day demand forecast |
 | `GET` | `/api/approvals/pending` | Pending HITL approval requests |
 | `POST` | `/api/approval/{id}/decide` | Approve or reject a request |
+| `GET` | `/api/aws/status` | AWS backend status and configuration |
+| `GET` | `/api/aws/kpi-trend/{metric}` | KPI trend from Redshift |
+| `GET` | `/api/aws/query` | Ad-hoc event query via Athena |
+| `GET` | `/api/aws/dashboards` | List QuickSight dashboards |
 | `WS` | `/ws/live` | Real-time event stream |
 
 ### Control Endpoints
@@ -514,7 +546,7 @@ Step 3: INVENTORY + RISK
 
 Step 4: SUPPLIER MANAGEMENT
   └── Supplier Manager    → evaluates suppliers, creates 5 purchase orders
-                            → HITL gate: >$50K requires approval
+                            → HITL gate: >=$50K requires approval, $10K-$50K pending review
 
 Step 5: LOGISTICS
   └── Logistics Coordinator → tracks 5 active shipments, simulates order progression
@@ -545,7 +577,108 @@ This architecture integrates insights from cutting-edge supply chain AI research
 
 ---
 
+## AWS Integration (Optional)
+
+ChainCommand supports an optional AWS persistence backend using the **Strategy Pattern**. When enabled, cycle data is persisted to S3/Redshift for durable storage and analytics via Athena and QuickSight — all without affecting the default in-memory mode.
+
+### Architecture
+
+```
+PersistenceBackend (ABC)
+  ├── NullBackend        # Default — no-op, zero overhead
+  └── AWSBackend         # S3 + Redshift + Athena + QuickSight
+        ├── S3Client         # Upload Parquet/JSONL/JSON
+        ├── RedshiftClient   # COPY from S3, SQL queries
+        ├── AthenaClient     # External tables on S3, ad-hoc queries
+        └── QuickSightClient # Datasets + dashboards
+```
+
+### Environment Variables
+
+```bash
+# Enable AWS backend
+CC_AWS_ENABLED=true
+CC_AWS_REGION=ap-northeast-1
+
+# S3
+CC_AWS_S3_BUCKET=chaincommand-data
+CC_AWS_S3_PREFIX=supply-chain/
+
+# Redshift
+CC_AWS_REDSHIFT_HOST=my-cluster.abc123.redshift.amazonaws.com
+CC_AWS_REDSHIFT_PORT=5439
+CC_AWS_REDSHIFT_DB=chaincommand
+CC_AWS_REDSHIFT_USER=admin
+CC_AWS_REDSHIFT_PASSWORD=secret
+CC_AWS_REDSHIFT_IAM_ROLE=arn:aws:iam::123456789012:role/RedshiftS3Access
+
+# Athena
+CC_AWS_ATHENA_DATABASE=chaincommand
+CC_AWS_ATHENA_OUTPUT=s3://chaincommand-data/athena-results/
+
+# QuickSight
+CC_AWS_QUICKSIGHT_ACCOUNT_ID=123456789012
+```
+
+### Setup Steps
+
+1. **S3 Bucket** — Create `chaincommand-data` (or your custom bucket) in your target region
+2. **Redshift Cluster** — Provision a cluster and create an IAM role with S3 read access for COPY
+3. **Athena Workgroup** — Ensure the default workgroup (or a custom one) has an output location configured
+4. **QuickSight** — (Optional) Set up a QuickSight account for dashboard creation
+5. **Set Environment Variables** — Configure all `CC_AWS_*` variables above
+6. **Start ChainCommand** — The backend auto-initializes tables and external tables on first run
+
+### AWS API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/aws/status` | AWS connection status and configuration |
+| `GET` | `/api/aws/kpi-trend/{metric}?days=30` | Query KPI trend from Redshift |
+| `GET` | `/api/aws/query?event_type=low_stock&limit=50` | Ad-hoc event query via Athena |
+| `GET` | `/api/aws/dashboards` | List QuickSight dashboards |
+
+### Additional Dependencies
+
+```bash
+pip install boto3 redshift-connector pyarrow
+```
+
+---
+
+## Testing
+
+```bash
+# Run all AWS backend tests (47 tests, no real AWS credentials needed)
+python -m pytest tests/test_aws/ -v
+
+# Run specific test modules
+python -m pytest tests/test_aws/test_backend.py -v       # NullBackend, factory, AWSBackend
+python -m pytest tests/test_aws/test_s3_client.py -v     # S3 upload/download operations
+python -m pytest tests/test_aws/test_redshift_client.py -v  # Redshift DDL, COPY, queries
+python -m pytest tests/test_aws/test_athena_client.py -v # Athena external tables, polling
+python -m pytest tests/test_aws/test_quicksight_client.py -v  # QuickSight datasets, dashboards
+```
+
+| Test Module | Tests | Coverage |
+|-------------|-------|----------|
+| `test_backend.py` | 17 | NullBackend no-ops, `get_backend()` factory, AWSBackend persist/query |
+| `test_s3_client.py` | 7 | Upload Parquet/JSONL/JSON, list objects, download, key formatting |
+| `test_redshift_client.py` | 8 | DDL creation, COPY command, SQL queries, KPI insert, connection |
+| `test_athena_client.py` | 9 | Database/table creation, query polling, result parsing, timeout |
+| `test_quicksight_client.py` | 6 | Data source, dataset, dashboard creation, list dashboards |
+| **Total** | **47** | All AWS clients fully mocked with `unittest.mock` |
+
+All tests use mocked `boto3` and `redshift_connector` — no real AWS account or credentials are required.
+
+---
+
 ## Roadmap & Future Work
+
+### Completed
+
+- [x] **AWS Persistence Backend** — S3, Redshift, Athena, QuickSight integration via Strategy Pattern (`NullBackend` / `AWSBackend`)
+- [x] **Unit Test Suite (AWS)** — 47 pytest tests with mocked boto3/redshift-connector, full coverage of all AWS clients
 
 ### Planned Enhancements
 
@@ -554,7 +687,7 @@ This architecture integrates insights from cutting-edge supply chain AI research
 - [ ] **Streaming Data Integration** — Connect to real ERP/WMS systems via Kafka or MQTT
 - [ ] **Interactive Dashboard** — React/Vue frontend with real-time charts and agent visualization
 - [ ] **Docker Containerization** — Docker Compose deployment with API server, workers, and message queue
-- [ ] **Unit Test Suite** — pytest coverage for all modules, agents, and API endpoints
+- [ ] **Extended Test Suite** — pytest coverage for agents, API endpoints, and ML models
 - [ ] **Agent Memory** — Persistent agent memory across cycles for learning and adaptation
 - [ ] **LangChain/LangGraph Integration** — Structured tool calling and agent graphs
 - [ ] **Prometheus Metrics** — Observability for agent performance and system health
@@ -584,6 +717,7 @@ This architecture integrates insights from cutting-edge supply chain AI research
 | **Terminal UI** | rich (progress bars, tables, trees) |
 | **Logging** | structlog (structured, ISO 8601) |
 | **LLM Clients** | openai (optional), httpx (Ollama, optional) |
+| **AWS (optional)** | boto3, redshift-connector, pyarrow (S3, Redshift, Athena, QuickSight) |
 | **Configuration** | Environment variables (CC_ prefix), .env file |
 
 ### Dependencies
@@ -607,6 +741,11 @@ httpx>=0.24.0          # for CC_LLM_MODE=ollama
 
 # ML (optional, enhances anomaly detection)
 scikit-learn>=1.0.0    # for Isolation Forest
+
+# AWS Backend (optional, for CC_AWS_ENABLED=true)
+boto3>=1.28.0          # S3, Athena, QuickSight
+redshift-connector>=2.0.0  # Redshift
+pyarrow>=12.0.0        # Parquet support
 ```
 
 ---

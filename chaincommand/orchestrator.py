@@ -50,6 +50,9 @@ class _RuntimeState:
     pending_approvals: Dict[str, HumanApprovalRequest] = field(default_factory=dict)
     kpi_history: List[KPISnapshot] = field(default_factory=list)
 
+    # Persistence backend
+    backend: Any = None
+
 
 _runtime = _RuntimeState()
 
@@ -248,6 +251,15 @@ class ChainCommandOrchestrator:
         log.info("system_ready")
         self._ui("on_init_phase_complete", 5)
 
+        # Phase 6: Initialize persistence backend
+        from .aws import get_backend
+
+        _runtime.backend = get_backend()
+        await _runtime.backend.setup()
+        if _runtime.demand_df is not None:
+            await _runtime.backend.persist_demand_history(_runtime.demand_df)
+        log.info("persistence_backend_ready", backend=type(_runtime.backend).__name__)
+
     async def run_cycle(self) -> Dict[str, Any]:
         """Execute one full decision cycle across all agent layers."""
         self._cycle_count += 1
@@ -334,6 +346,17 @@ class ChainCommandOrchestrator:
             if _runtime.event_bus:
                 await _runtime.event_bus.publish(event)
 
+        # Persist cycle data to backend
+        if _runtime.backend:
+            await _runtime.backend.persist_cycle(
+                cycle=self._cycle_count,
+                kpi=snapshot,
+                events=list(_runtime.event_bus.recent_events[-50:]) if _runtime.event_bus else [],
+                pos=_runtime.purchase_orders,
+                products=products,
+                suppliers=_runtime.suppliers or [],
+            )
+
         # Simulate demand consumption
         for p in products:
             consumed = max(0, random.gauss(p.daily_demand_avg, p.daily_demand_std))
@@ -391,6 +414,8 @@ class ChainCommandOrchestrator:
     async def shutdown(self) -> None:
         """Clean shutdown of all components."""
         self._running = False
+        if _runtime.backend:
+            await _runtime.backend.teardown()
         if _runtime.monitor:
             await _runtime.monitor.stop()
         if _runtime.event_bus:

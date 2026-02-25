@@ -55,6 +55,21 @@ class Settings(BaseSettings):
     port: int = 8000
     log_level: str = "INFO"
 
+    # ── AWS ───────────────────────────────────────────────
+    aws_enabled: bool = False
+    aws_region: str = "ap-northeast-1"
+    aws_s3_bucket: str = "chaincommand-data"
+    aws_s3_prefix: str = "supply-chain/"
+    aws_redshift_host: str = ""
+    aws_redshift_port: int = 5439
+    aws_redshift_db: str = "chaincommand"
+    aws_redshift_user: str = ""
+    aws_redshift_password: str = ""
+    aws_redshift_iam_role: str = ""
+    aws_athena_database: str = "chaincommand"
+    aws_athena_output: str = "s3://chaincommand-data/athena-results/"
+    aws_quicksight_account_id: str = ""
+
     # ── ML model params ──────────────────────────────────
     lstm_hidden_size: int = 64
     lstm_num_layers: int = 2

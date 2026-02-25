@@ -67,3 +67,5 @@ node_modules/
 
 # ─── Project-specific exclusions ─────────────────────────
 docs/
+demo/
+generate_aws_screenshots.py

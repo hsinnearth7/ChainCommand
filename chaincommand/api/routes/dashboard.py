@@ -1,4 +1,4 @@
-"""Dashboard routes — KPI, inventory, agents, events, forecasts, approvals."""
+"""Dashboard routes — KPI, inventory, agents, events, forecasts, approvals, AWS."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
+from ...config import settings
 from ...data.schemas import ApprovalStatus
 from ...utils.logging_config import get_logger
 
@@ -166,6 +167,70 @@ async def decide_approval(request_id: str, approved: bool, reason: str = ""):
 
     log.info("approval_decided", request_id=request_id, approved=approved)
     return {"request_id": request_id, "status": approval.status.value, "reason": reason}
+
+
+# ── AWS Integration ──────────────────────────────────────
+
+@router.get("/aws/status")
+async def get_aws_status():
+    """Return AWS connection status and configuration."""
+    from ...orchestrator import _runtime
+
+    backend_type = type(_runtime.backend).__name__ if _runtime.backend else "None"
+    return {
+        "enabled": settings.aws_enabled,
+        "backend": backend_type,
+        "region": settings.aws_region,
+        "s3_bucket": settings.aws_s3_bucket,
+        "redshift_host": settings.aws_redshift_host or "(not configured)",
+        "athena_database": settings.aws_athena_database,
+        "quicksight_account": settings.aws_quicksight_account_id or "(not configured)",
+    }
+
+
+@router.get("/aws/kpi-trend/{metric}")
+async def get_aws_kpi_trend(
+    metric: str,
+    days: int = Query(default=30, ge=1, le=365),
+):
+    """Query KPI trend from Redshift via the persistence backend."""
+    from ...orchestrator import _runtime
+
+    if not _runtime.backend or not settings.aws_enabled:
+        return {"error": "AWS backend not enabled", "data": []}
+    data = await _runtime.backend.query_kpi_trend(metric, days)
+    return {"metric": metric, "days": days, "data": data}
+
+
+@router.get("/aws/query")
+async def run_aws_query(
+    event_type: str = Query(..., min_length=1),
+    limit: int = Query(default=50, ge=1, le=500),
+):
+    """Execute an Athena ad-hoc query for events by type."""
+    from ...orchestrator import _runtime
+
+    if not _runtime.backend or not settings.aws_enabled:
+        return {"error": "AWS backend not enabled", "data": []}
+    data = await _runtime.backend.query_events(event_type, limit)
+    return {"event_type": event_type, "limit": limit, "data": data}
+
+
+@router.get("/aws/dashboards")
+async def list_aws_dashboards():
+    """List QuickSight dashboards (requires AWS backend)."""
+    from ...orchestrator import _runtime
+
+    if not _runtime.backend or not settings.aws_enabled:
+        return {"error": "AWS backend not enabled", "dashboards": []}
+    try:
+        from ...aws.quicksight_client import QuickSightClient
+
+        qs = QuickSightClient()
+        dashboards = qs.list_dashboards()
+        return {"dashboards": dashboards, "count": len(dashboards)}
+    except Exception as exc:
+        return {"error": str(exc), "dashboards": []}
 
 
 # ── WebSocket — Live Events ──────────────────────────────────
