@@ -80,6 +80,7 @@ The system runs fully autonomously in mock mode (no API keys needed), generating
 - **Proactive Monitoring** — Continuous tick-based scanning for low stock, KPI violations, delivery delays, and anomalies
 - **12 KPI Metrics** — OTIF, fill rate, MAPE, DSI, stockout count, inventory turnover, carrying cost, perfect order rate, backorder rate, supplier defect rate, and more
 - **REST API + WebSocket** — Full FastAPI dashboard with live event streaming, agent triggers, and simulation control
+- **Rich Terminal UI** — Demo mode with animated progress bars, color-coded KPI dashboard, agent layer tree, event log with severity highlighting, and step timing charts (powered by `rich`)
 - **Mock-First Design** — Complete system runs without any API keys using rule-based mock LLM
 
 ---
@@ -181,6 +182,11 @@ chaincommand/
 │       ├── dashboard.py                 # KPI, inventory, agents, events, forecast, approvals, WebSocket
 │       └── control.py                   # Simulation start/stop/speed, agent triggers
 │
+├── ui/                                  # Rich Terminal UI (demo mode)
+│   ├── __init__.py
+│   ├── theme.py                        # Visual constants, colors, layer badges
+│   └── console.py                      # ChainCommandUI (progress bars, KPI dashboard, trees)
+│
 └── utils/                               # Utilities
     ├── __init__.py
     └── logging_config.py               # Structlog configuration
@@ -226,11 +232,11 @@ tests/                                       # Test suite (skeleton)
 
 ```bash
 # Clone the repository
-git clone https://github.com/hsinnearth7/ChainCommand.git
-cd ChainCommand
+git clone https://github.com/hsinnearth7/ChainCommand_Autonomous_Supply_Chain_Optimizer_Agent_Team.git
+cd ChainCommand_Autonomous_Supply_Chain_Optimizer_Agent_Team
 
 # Install dependencies
-pip install pydantic pydantic-settings numpy pandas structlog
+pip install pydantic pydantic-settings numpy pandas structlog rich
 
 # For API server mode (optional)
 pip install fastapi uvicorn
@@ -249,7 +255,20 @@ This will:
 3. Train Isolation Forest anomaly detector on all 50 products
 4. Initialize 10 AI agents with mock LLM
 5. Execute one full 8-step decision cycle
-6. Print KPI snapshot and agent summaries
+6. Display Rich terminal UI with progress bars, KPI dashboard, agent tree, and event log
+
+> **Note:** Install `rich>=13.0.0` for the enhanced terminal UI. The demo gracefully falls back to plain text if `rich` is not installed.
+
+### Demo Screenshots
+
+**Startup & Initialization**
+![Header & Init](demo/demo_1_header_init.png)
+
+**Decision Cycle Alerts, Timing & KPI Dashboard**
+![Cycle & KPI](demo/demo_2_cycle_kpi.png)
+
+**Agent Results Tree & Event Log**
+![Agents & Events](demo/demo_3_agents_events.png)
 
 ### API Server Mode
 
@@ -562,6 +581,7 @@ This architecture integrates insights from cutting-edge supply chain AI research
 | **ML/Statistics** | scikit-learn (Isolation Forest), custom LSTM/XGB/GA/DQN |
 | **API Server** | FastAPI, uvicorn |
 | **Async Runtime** | asyncio (native Python) |
+| **Terminal UI** | rich (progress bars, tables, trees) |
 | **Logging** | structlog (structured, ISO 8601) |
 | **LLM Clients** | openai (optional), httpx (Ollama, optional) |
 | **Configuration** | Environment variables (CC_ prefix), .env file |
@@ -575,6 +595,7 @@ pydantic-settings>=2.0.0
 numpy>=1.21.0
 pandas>=1.5.0
 structlog>=23.0.0
+rich>=13.0.0
 
 # API Server (optional)
 fastapi>=0.100.0
