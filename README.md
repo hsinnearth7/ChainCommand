@@ -2,7 +2,7 @@
 
 # ChainCommand — Autonomous Supply Chain Optimizer Agent Team
 
-**10 AI Agents × 3 Temporal Layers × Event-Driven Architecture: From Data to Autonomous Decisions**
+**10 AI Agents × 4 Collaborative Layers × Event-Driven Architecture: From Data to Autonomous Decisions**
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.129+-009688.svg)](https://fastapi.tiangolo.com/)
@@ -71,7 +71,7 @@ The entire system runs from a single command (`python -m chaincommand --demo`) w
 ## Key Features
 
 - **10-Agent Autonomous Team** — Demand Forecaster, Strategic Planner, Inventory Optimizer, Supplier Manager, Logistics Coordinator, Anomaly Detector, Risk Assessor, Market Intelligence, Coordinator (CSCO), and Reporter
-- **3-Layer Temporal Architecture** — Strategic (weekly/monthly), Tactical (daily), and Operational (real-time) decision layers inspired by JD.com's two-tier architecture (ArXiv 2509.03811)
+- **4-Layer Architecture** — Strategic (weekly/monthly), Tactical (daily), Operational (real-time), and Orchestration (cross-layer coordination) — inspired by JD.com's two-tier architecture (ArXiv 2509.03811)
 - **Event-Driven Communication** — Pub/sub EventBus decouples agent interactions; agents subscribe to relevant events and react autonomously
 - **Ensemble Forecasting** — LSTM + XGBoost with dynamic inverse-MAPE weighting that auto-adjusts based on per-model accuracy
 - **Hybrid Optimization** — Genetic Algorithm for global parameter search + DQN reinforcement learning for dynamic inventory decisions

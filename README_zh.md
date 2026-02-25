@@ -2,7 +2,7 @@
 
 # ChainCommand — 自主供應鏈優化 AI 團隊
 
-**10 個 AI 代理 × 3 時序層 × 事件驅動架構：從數據到自主決策**
+**10 個 AI 代理 × 4 協作層 × 事件驅動架構：從數據到自主決策**
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.129+-009688.svg)](https://fastapi.tiangolo.com/)
@@ -71,7 +71,7 @@
 ## 核心特色
 
 - **10 代理自主團隊** — 需求預測、戰略規劃、庫存優化、供應商管理、物流協調、異常偵測、風險評估、市場情報、協調器（CSCO）、報告代理
-- **3 層時序架構** — 戰略層（週/月）、戰術層（日）、作業層（即時）決策層，靈感來自京東兩層架構（ArXiv 2509.03811）
+- **4 層架構** — 戰略層（週/月）、戰術層（日）、作業層（即時）、協調層（跨層協調）——靈感來自京東兩層架構（ArXiv 2509.03811）
 - **事件驅動通訊** — Pub/Sub EventBus 解耦代理互動；代理訂閱相關事件並自主反應
 - **集成預測** — LSTM + XGBoost 動態反向 MAPE 加權，根據各模型準確度自動調整
 - **混合優化** — 遺傳演算法（GA）全域參數搜索 + DQN 強化學習動態庫存決策
@@ -218,17 +218,17 @@ chaincommand/
 │   ├── theme.py                        # 視覺常數、顏色、層級標籤
 │   └── console.py                      # ChainCommandUI（進度條、KPI 儀表板、樹狀圖）
 │
-├── utils/                               # 工具程式
-│   ├── __init__.py
-│   └── logging_config.py               # structlog 配置
-│
-└── tests/                               # 測試套件（骨架）
+└── utils/                               # 工具程式
     ├── __init__.py
-    ├── test_agents/
-    ├── test_api/
-    ├── test_integration/
-    ├── test_kpi/
-    └── test_models/
+    └── logging_config.py               # structlog 配置
+
+tests/                                       # 測試套件（骨架）
+├── __init__.py
+├── test_agents/
+├── test_api/
+├── test_integration/
+├── test_kpi/
+└── test_models/
 ```
 
 ---
