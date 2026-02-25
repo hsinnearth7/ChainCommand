@@ -51,9 +51,9 @@
 
 ## Project Overview
 
-**ChainCommand** is a multi-agent AI system that autonomously optimizes supply chain operations. Ten specialized agents — organized across strategic, tactical, and operational layers — collaborate through an event-driven architecture to forecast demand, manage inventory, assess risk, coordinate logistics, and produce executive reports.
+**ChainCommand** is a multi-agent AI system that autonomously optimizes end-to-end supply chain operations. Ten specialized agents — organized across four collaborative layers (Strategic, Tactical, Operational, and Orchestration) — communicate through an async event-driven pub/sub architecture to forecast demand, optimize inventory, assess supply risk, coordinate logistics, and generate executive reports.
 
-The system runs fully autonomously in mock mode (no API keys needed), generating synthetic data, training ML models, and executing complete decision cycles where agents communicate via pub/sub events, escalate high-cost actions to human approval, and continuously optimize KPIs.
+The entire system runs from a single command (`python -m chaincommand --demo`) with zero API keys: it generates a realistic supply chain scenario (50 products, 20 suppliers, 365-day demand history), trains ML models (LSTM + XGBoost ensemble forecaster, Isolation Forest anomaly detector, GA + DQN hybrid optimizer), wires 10 agents with 16 tools across an EventBus, and executes a complete 8-step decision cycle — with a Rich terminal dashboard showing real-time progress, color-coded KPIs, and agent-layer results.
 
 ### Why This Project?
 
