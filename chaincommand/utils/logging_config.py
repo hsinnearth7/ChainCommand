@@ -10,9 +10,17 @@ import structlog
 from chaincommand.config import settings
 
 
-def setup_logging() -> None:
-    """Configure structlog + stdlib logging."""
-    log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
+def setup_logging(quiet: bool = False) -> None:
+    """Configure structlog + stdlib logging.
+
+    Args:
+        quiet: If True, suppress logs below WARNING to avoid interfering
+               with Rich terminal UI output.
+    """
+    log_level = (
+        logging.WARNING if quiet
+        else getattr(logging, settings.log_level.upper(), logging.INFO)
+    )
 
     structlog.configure(
         processors=[

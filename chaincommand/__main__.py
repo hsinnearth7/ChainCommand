@@ -42,7 +42,45 @@ def main() -> None:
 
 
 async def _run_demo() -> None:
-    """Run one full decision cycle and print the result."""
+    """Run one full decision cycle with Rich terminal UI."""
+    from .orchestrator import ChainCommandOrchestrator
+
+    try:
+        from .ui import ChainCommandUI
+        _rich_available = True
+    except ImportError:
+        _rich_available = False
+
+    if not _rich_available:
+        await _run_demo_plain()
+        return
+
+    ui = ChainCommandUI()
+    orchestrator = ChainCommandOrchestrator(ui_callback=ui)
+
+    ui.print_header()
+
+    # ── Initialization ──────────────────────────────────
+    with ui.init_progress():
+        await orchestrator.initialize()
+    ui.print_init_complete()
+
+    # ── Decision Cycle ──────────────────────────────────
+    with ui.cycle_progress():
+        result = await orchestrator.run_cycle()
+
+    # ── Results ─────────────────────────────────────────
+    ui.print_cycle_timing()
+    ui.print_kpi_dashboard(result.get("kpi", {}))
+    ui.print_agent_summary_tree(result.get("agent_results", {}))
+    ui.print_event_log()
+    ui.print_footer()
+
+    await orchestrator.shutdown()
+
+
+async def _run_demo_plain() -> None:
+    """Fallback: plain-text demo when rich is not installed."""
     from .orchestrator import ChainCommandOrchestrator
 
     print("=" * 70)
