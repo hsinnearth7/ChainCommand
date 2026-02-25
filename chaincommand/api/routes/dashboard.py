@@ -197,7 +197,8 @@ async def websocket_live(websocket: WebSocket):
                 if len(seen_ids) > 5000:
                     seen_ids = set(list(seen_ids)[-2000:])
     except WebSocketDisconnect:
-        _ws_clients.remove(websocket)
+        if websocket in _ws_clients:
+            _ws_clients.remove(websocket)
         log.info("ws_client_disconnected", total=len(_ws_clients))
     except Exception:
         if websocket in _ws_clients:

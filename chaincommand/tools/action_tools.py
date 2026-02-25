@@ -74,9 +74,16 @@ class CreatePurchaseOrder(BaseTool):
             )
             _runtime.pending_approvals[approval.request_id] = approval
         else:
-            po.approval_status = ApprovalStatus.AUTO_APPROVED
-            po.status = OrderStatus.APPROVED
-            po.approved_by = "system"
+            # Middle range: requires review
+            po.approval_status = ApprovalStatus.PENDING
+            approval = HumanApprovalRequest(
+                request_type="purchase_order",
+                description=f"PO {po.po_id}: {quantity} units of {product_id} from {supplier_id}",
+                estimated_cost=total_cost,
+                risk_level=AlertSeverity.MEDIUM,
+                data={"po_id": po.po_id, "po": po.model_dump()},
+            )
+            _runtime.pending_approvals[approval.request_id] = approval
 
         _runtime.purchase_orders.append(po)
 
