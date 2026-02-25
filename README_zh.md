@@ -57,7 +57,7 @@
 
 **ChainCommand** 是一個多代理 AI 系統，能夠自主優化端到端供應鏈運營。十個專業代理——分佈在四個協作層（戰略層、戰術層、作業層、協調層）——透過非同步事件驅動 pub/sub 架構通訊，實現需求預測、庫存優化、供應風險評估、物流協調和執行報告生成。
 
-整個系統僅需一條指令即可運行（`python -m chaincommand --demo`），無需任何 API 金鑰：自動生成真實供應鏈場景（50 個產品、20 個供應商、365 天需求歷史），訓練 ML 模型（LSTM + XGBoost 集成預測器、Isolation Forest 異常偵測器、GA + DQN 混合優化器），將 10 個代理與 16 個工具透過 EventBus 串接，並執行完整的 8 步決策週期——搭配 Rich 終端儀表板即時顯示進度、色彩 KPI 指標和代理層級結果。
+整個系統僅需一條指令即可運行（`python -m chaincommand --demo`），無需任何 API 金鑰：自動生成真實供應鏈場景（50 個產品、20 個供應商、365 天需求歷史），訓練 ML 模型（LSTM + XGBoost 集成預測器、Isolation Forest 異常偵測器、GA + DQN 混合優化器），將 10 個代理與 16 個工具透過 EventBus 串接，並執行完整的 8 步決策週期——搭配 Rich 終端儀表板即時顯示進度、色彩 KPI 指標和代理層級結果。可選的 AWS 持久化後端（S3 + Redshift + Athena + QuickSight）透過 Strategy Pattern 抽象層提供生產級數據存儲、分析查詢和 BI 儀表板——未啟用時自動切換至零開銷的 NullBackend。專案包含 47 項單元測試，完整覆蓋 AWS 整合層。
 
 ### 為什麼建立這個專案？
 
@@ -69,6 +69,7 @@
 | 高成本決策缺乏監督 | HITL（Human-In-The-Loop）閘門搭配可配置門檻 |
 | 牛鞭效應放大波動 | 受啤酒遊戲研究啟發的跨代理共識機制 |
 | 監控為被動式 | 主動監控引擎每個 tick 掃描異常和 KPI 違反 |
+| 生產環境數據缺乏持久化 | AWS Strategy Pattern 後端（S3 / Redshift / Athena / QuickSight）搭配零開銷切換 |
 
 ---
 

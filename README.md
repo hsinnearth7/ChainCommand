@@ -57,7 +57,7 @@
 
 **ChainCommand** is a multi-agent AI system that autonomously optimizes end-to-end supply chain operations. Ten specialized agents — organized across four collaborative layers (Strategic, Tactical, Operational, and Orchestration) — communicate through an async event-driven pub/sub architecture to forecast demand, optimize inventory, assess supply risk, coordinate logistics, and generate executive reports.
 
-The entire system runs from a single command (`python -m chaincommand --demo`) with zero API keys: it generates a realistic supply chain scenario (50 products, 20 suppliers, 365-day demand history), trains ML models (LSTM + XGBoost ensemble forecaster, Isolation Forest anomaly detector, GA + DQN hybrid optimizer), wires 10 agents with 16 tools across an EventBus, and executes a complete 8-step decision cycle — with a Rich terminal dashboard showing real-time progress, color-coded KPIs, and agent-layer results.
+The entire system runs from a single command (`python -m chaincommand --demo`) with zero API keys: it generates a realistic supply chain scenario (50 products, 20 suppliers, 365-day demand history), trains ML models (LSTM + XGBoost ensemble forecaster, Isolation Forest anomaly detector, GA + DQN hybrid optimizer), wires 10 agents with 16 tools across an EventBus, and executes a complete 8-step decision cycle — with a Rich terminal dashboard showing real-time progress, color-coded KPIs, and agent-layer results. An optional AWS persistence backend (S3 + Redshift + Athena + QuickSight) enables production-grade data storage, analytical queries, and BI dashboards via a Strategy Pattern abstraction — defaulting to a zero-overhead NullBackend when disabled. The project includes 47 unit tests covering the full AWS integration layer.
 
 ### Why This Project?
 
@@ -69,6 +69,7 @@ The entire system runs from a single command (`python -m chaincommand --demo`) w
 | High-cost decisions lack oversight | HITL (Human-In-The-Loop) gates with configurable thresholds |
 | Bullwhip effect amplifies volatility | Beer game consensus mechanism across agent layers |
 | Monitoring is reactive | Proactive monitor scans every tick for anomalies and KPI violations |
+| Production data lacks persistence | AWS Strategy Pattern backend (S3 / Redshift / Athena / QuickSight) with zero-overhead fallback |
 
 ---
 
