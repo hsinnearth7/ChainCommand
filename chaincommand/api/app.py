@@ -4,17 +4,35 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from ..auth import require_api_key, require_ws_api_key
 from ..config import settings
 from ..utils.logging_config import get_logger
 
 log = get_logger(__name__)
+
+# ── Rate limiting ────────────────────────────────────────────
+
+_rate_limit_store: dict[str, list[float]] = defaultdict(list)
+
+
+def _check_rate_limit(request: Request) -> None:
+    """Simple in-memory per-IP rate limiter."""
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.time()
+    window = _rate_limit_store[client_ip]
+    _rate_limit_store[client_ip] = [t for t in window if t > now - 60]
+    if len(_rate_limit_store[client_ip]) >= settings.rate_limit_per_minute:
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+    _rate_limit_store[client_ip].append(now)
 
 
 @asynccontextmanager
@@ -37,13 +55,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — allow dashboard frontends
+# CORS — configurable origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[o.strip() for o in settings.cors_origins.split(",")],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["X-API-Key", "Content-Type"],
 )
 
 # ── Register routers ────────────────────────────────────────
@@ -64,6 +82,11 @@ async def root():
     }
 
 
+@app.get("/api/health")
+async def health_check():
+    return {"status": "ok", "name": "ChainCommand", "version": "1.0.0"}
+
+
 def _json_serial(obj):
     """JSON serializer for datetime objects."""
     if isinstance(obj, datetime):
@@ -74,6 +97,9 @@ def _json_serial(obj):
 @app.websocket("/ws/live")
 async def websocket_live(websocket: WebSocket):
     """Live event stream via WebSocket (top-level route)."""
+    # Auth check
+    await require_ws_api_key(websocket)
+
     await websocket.accept()
     log.info("ws_client_connected")
 

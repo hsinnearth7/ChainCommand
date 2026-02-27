@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 
+from ...auth import require_api_key
 from ...config import settings
 from ...data.schemas import ApprovalStatus
 from ...utils.logging_config import get_logger
 
 log = get_logger(__name__)
-router = APIRouter(tags=["dashboard"])
+router = APIRouter(tags=["dashboard"], dependencies=[Depends(require_api_key)])
 
 
 # ── KPI ──────────────────────────────────────────────────────
@@ -161,7 +162,7 @@ async def decide_approval(request_id: str, approved: bool, reason: str = ""):
         return {"error": f"Approval request {request_id} not found"}
 
     approval.status = ApprovalStatus.APPROVED if approved else ApprovalStatus.REJECTED
-    approval.decided_at = datetime.utcnow()
+    approval.decided_at = datetime.now(timezone.utc)
     approval.decided_by = "human"
     approval.reason = reason
 
@@ -230,41 +231,5 @@ async def list_aws_dashboards():
         dashboards = qs.list_dashboards()
         return {"dashboards": dashboards, "count": len(dashboards)}
     except Exception as exc:
+        log.error("aws_dashboards_error", error=str(exc))
         return {"error": str(exc), "dashboards": []}
-
-
-# ── WebSocket — Live Events ──────────────────────────────────
-
-_ws_clients: list[WebSocket] = []
-
-
-@router.websocket("/ws/live")
-async def websocket_live(websocket: WebSocket):
-    """Live event stream via WebSocket."""
-    await websocket.accept()
-    _ws_clients.append(websocket)
-    log.info("ws_client_connected", total=len(_ws_clients))
-
-    try:
-        seen_ids: set[str] = set()
-        while True:
-            # Keep connection alive; push events from event bus
-            await asyncio.sleep(1)
-            from ...orchestrator import _runtime
-
-            if _runtime.event_bus:
-                events = _runtime.event_bus.recent_events[-20:]
-                for evt in events:
-                    if evt.event_id not in seen_ids:
-                        seen_ids.add(evt.event_id)
-                        await websocket.send_json(evt.model_dump())
-                # Cap memory
-                if len(seen_ids) > 5000:
-                    seen_ids = set(list(seen_ids)[-2000:])
-    except WebSocketDisconnect:
-        if websocket in _ws_clients:
-            _ws_clients.remove(websocket)
-        log.info("ws_client_disconnected", total=len(_ws_clients))
-    except Exception:
-        if websocket in _ws_clients:
-            _ws_clients.remove(websocket)

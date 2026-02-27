@@ -13,6 +13,8 @@ log = get_logger(__name__)
 
 Handler = Callable[[SupplyChainEvent], Coroutine[Any, Any, None]]
 
+MAX_EVENT_LOG_SIZE = 10_000
+
 
 class EventBus:
     """Async publish/subscribe event bus for supply chain events."""
@@ -37,6 +39,8 @@ class EventBus:
     async def publish(self, event: SupplyChainEvent) -> None:
         """Publish an event. Dispatches to matching subscribers."""
         self._event_log.append(event)
+        if len(self._event_log) > MAX_EVENT_LOG_SIZE:
+            self._event_log = self._event_log[-MAX_EVENT_LOG_SIZE:]
         log.info(
             "event_published",
             event_type=event.event_type,

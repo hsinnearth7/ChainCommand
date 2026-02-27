@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from typing import Any, List
 
@@ -124,13 +125,14 @@ class AWSBackend(PersistenceBackend):
 
     async def query_events(self, event_type: str, limit: int) -> list:
         """Query events from Athena (ad-hoc on S3)."""
-        # Sanitise inputs to prevent SQL injection
-        safe_type = event_type.replace("'", "''")
+        # Strict validation: only alphanumeric, underscores, dots
+        if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_.]*$', event_type):
+            return []
         safe_limit = max(1, min(int(limit), 500))
         sql = (
             f"SELECT event_id, timestamp, event_type, severity, source_agent, description "
             f"FROM events "
-            f"WHERE event_type = '{safe_type}' "
+            f"WHERE event_type = '{event_type}' "
             f"ORDER BY timestamp DESC "
             f"LIMIT {safe_limit}"
         )

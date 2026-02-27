@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from ...auth import require_api_key
 from ...config import settings
 from ...utils.logging_config import get_logger
 
 log = get_logger(__name__)
-router = APIRouter(tags=["control"])
+router = APIRouter(tags=["control"], dependencies=[Depends(require_api_key)])
 
 
 @router.post("/simulation/start")

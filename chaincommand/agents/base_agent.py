@@ -13,6 +13,8 @@ from ..utils.logging_config import get_logger
 
 log = get_logger(__name__)
 
+MAX_ACTION_LOG = 1_000
+
 
 class BaseAgent(ABC):
     """Abstract base class for all ChainCommand agents."""
@@ -65,6 +67,8 @@ class BaseAgent(ABC):
             log.error("agent_act_error", agent=self.name, action=action.action_type, error=str(exc))
 
         self._action_log.append(action)
+        if len(self._action_log) > MAX_ACTION_LOG:
+            self._action_log = self._action_log[-MAX_ACTION_LOG:]
         return result
 
     @abstractmethod

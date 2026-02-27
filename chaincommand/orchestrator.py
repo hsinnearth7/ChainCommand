@@ -86,6 +86,7 @@ class ChainCommandOrchestrator:
     async def initialize(self) -> None:
         """Bootstrap the entire system."""
         setup_logging(quiet=self._ui_callback is not None)
+        random.seed(settings.random_seed)
         log.info("initializing", llm_mode=settings.llm_mode.value)
 
         # Phase 0: Generate synthetic data
@@ -393,8 +394,11 @@ class ChainCommandOrchestrator:
                 await asyncio.sleep(interval)
             except asyncio.CancelledError:
                 break
+            except (RuntimeError, ValueError, KeyError, TypeError) as exc:
+                log.error("cycle_error", error=str(exc), exc_type=type(exc).__name__)
+                await asyncio.sleep(5)
             except Exception as exc:
-                log.error("cycle_error", error=str(exc))
+                log.error("cycle_unexpected_error", error=str(exc), exc_type=type(exc).__name__)
                 await asyncio.sleep(5)
 
     async def stop_loop(self) -> None:

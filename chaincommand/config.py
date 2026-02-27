@@ -50,6 +50,14 @@ class Settings(BaseSettings):
     inventory_change_pct_threshold: float = 25.0  # >25% change needs approval
     auto_approve_below: float = 10_000.0
 
+    # ── Security ────────────────────────────────────────────
+    api_key: str = "dev-key-change-me"
+    cors_origins: str = "http://localhost:3000,http://localhost:5173"
+    rate_limit_per_minute: int = 60
+
+    # ── Reproducibility ────────────────────────────────────
+    random_seed: int = 42
+
     # ── Server ───────────────────────────────────────────
     host: str = "0.0.0.0"
     port: int = 8000

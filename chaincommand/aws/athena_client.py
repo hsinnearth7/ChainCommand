@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Any, Dict, List, Optional
 
@@ -86,11 +87,22 @@ class AthenaClient:
     ) -> None:
         import boto3
 
-        self._database = database or settings.aws_athena_database
+        self._database = self._validate_identifier(
+            database or settings.aws_athena_database, "database"
+        )
         self._output = output_location or settings.aws_athena_output
         self._client = boto3.client("athena", region_name=region or settings.aws_region)
-        self._bucket = settings.aws_s3_bucket
+        self._bucket = self._validate_identifier(
+            settings.aws_s3_bucket, "bucket"
+        )
         self._prefix = settings.aws_s3_prefix.rstrip("/")
+
+    @staticmethod
+    def _validate_identifier(value: str, name: str) -> str:
+        """Validate that a value is a safe SQL/AWS identifier."""
+        if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_\-]*$', value):
+            raise ValueError(f"Invalid {name}: {value}")
+        return value
 
     def create_database(self) -> str:
         """Create the Athena database if it doesn't exist."""

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..config import settings
@@ -152,13 +153,23 @@ class RedshiftClient:
         cursor.close()
         log.info("redshift_tables_created")
 
+    _ALLOWED_TABLES = {"kpi_snapshots", "purchase_orders", "events", "products", "suppliers"}
+    _ALLOWED_FORMATS = {"JSON", "PARQUET", "CSV"}
+
     def copy_from_s3(self, table: str, s3_key: str, file_format: str = "JSON") -> None:
         """Execute a COPY command to load data from S3."""
+        if table not in self._ALLOWED_TABLES:
+            raise ValueError(f"Invalid table: {table}")
+        if file_format.upper() not in self._ALLOWED_FORMATS:
+            raise ValueError(f"Invalid format: {file_format}")
+        if not re.match(r'^[\w./\-]+$', s3_key):
+            raise ValueError(f"Invalid S3 key: {s3_key}")
+
         sql = f"""
             COPY {table}
             FROM 's3://{settings.aws_s3_bucket}/{s3_key}'
             IAM_ROLE '{self._iam_role}'
-            FORMAT AS {file_format}
+            FORMAT AS {file_format.upper()}
             TIMEFORMAT 'auto'
             TRUNCATECOLUMNS
             BLANKSASNULL
