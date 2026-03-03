@@ -287,8 +287,8 @@ tests/                                   # 120+ tests across 12 modules
 
 ```bash
 # Clone the repository
-git clone https://github.com/hsinnearth7/ChainCommand_Autonomous_Supply_Chain_Optimizer_Agent_Team.git
-cd ChainCommand_Autonomous_Supply_Chain_Optimizer_Agent_Team
+git clone https://github.com/hsinnearth7/ChainCommand.git
+cd ChainCommand
 
 # Install core + dev dependencies (PEP 621)
 pip install -e ".[dev]"
