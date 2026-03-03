@@ -12,6 +12,7 @@ dependencies = [
     "pydantic-settings>=2.0",
     "numpy>=1.24",
     "pandas>=2.0",
+    "scikit-learn>=1.4",
     "structlog>=23.0",
     "rich>=13.0",
 ]
@@ -27,6 +28,7 @@ dev = [
     "pytest-cov>=4.0",
     "hypothesis>=6.0",
     "httpx>=0.27",
+    "pyarrow>=14.0",
     "ruff>=0.4",
     "mypy>=1.10",
     "fastapi>=0.110",
