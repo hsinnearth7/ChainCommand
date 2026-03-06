@@ -47,6 +47,12 @@ pytest tests/test_causal/         # Causal inference tests
 pytest tests/test_resilience/     # Circuit breaker tests
 ```
 
+## Development Guidelines
+- Always JSON-serialize datetime objects and numpy types before sending through WebSocket. Use `SafeEncoder` (see root CLAUDE.md).
+- Test WebSocket `/ws/live` endpoint immediately after changes to catch routing/serialization issues.
+- After editing Python files, verify syntax with `python -m py_compile <file>`.
+- Run `pytest tests/ -v` after code changes, not as a final step.
+
 ## Dependencies
 Core deps always installed. Optional groups:
 - `pip install -e ".[langgraph]"` — LangGraph orchestrator

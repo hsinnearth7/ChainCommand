@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const demoDir = path.join(__dirname, 'demo');
+const API_KEY = 'dev-key-change-me';
 
 function syntaxHighlightScript() {
   return `
@@ -112,6 +113,11 @@ function buildHtml(endpoint, prettyJson) {
 
   for (const ep of endpoints) {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+
+    // Inject API key header for all /api/ requests
+    await page.route('**/api/**', async (route) => {
+      await route.continue({ headers: { ...route.request().headers(), 'X-API-Key': API_KEY } });
+    });
 
     // Fetch raw JSON
     const resp = await page.goto(ep.url, { waitUntil: 'networkidle' });

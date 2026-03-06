@@ -5,9 +5,19 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const demoDir = path.join(__dirname, 'demo');
 const BASE = 'http://localhost:8000';
+const API_KEY = 'dev-key-change-me';
+
+async function injectApiKey(page) {
+  // Intercept all /api/ requests and inject the API key header
+  await page.route('**/api/**', async (route) => {
+    const headers = { ...route.request().headers(), 'X-API-Key': API_KEY };
+    await route.continue({ headers });
+  });
+}
 
 async function captureEndpoint(browser, { id, name, paramFills }) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await injectApiKey(page);
   await page.goto(`${BASE}/docs`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(2000);
 
@@ -49,6 +59,7 @@ async function captureEndpoint(browser, { id, name, paramFills }) {
 
   // 1. Overview
   const overviewPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await injectApiKey(overviewPage);
   await overviewPage.goto(`${BASE}/docs`, { waitUntil: 'networkidle' });
   await overviewPage.waitForTimeout(2000);
   await overviewPage.screenshot({ path: path.join(demoDir, 'swagger_overview.png'), fullPage: true });
