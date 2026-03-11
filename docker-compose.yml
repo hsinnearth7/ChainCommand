@@ -9,6 +9,46 @@ services:
       - CC_LOG_LEVEL=INFO
       - CC_ENABLE_CAUSAL_ANALYSIS=false
       - CC_ENABLE_CHRONOS=false
+      - DATABASE_URL=postgresql://chaincommand:changeme@postgres:5432/chaincommand
+      - REDIS_URL=redis://redis:6379/0
     volumes:
       - ./data:/app/data
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: chaincommand
+      POSTGRES_USER: chaincommand
+      POSTGRES_PASSWORD: changeme
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chaincommand -d chaincommand"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

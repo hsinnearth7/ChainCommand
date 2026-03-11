@@ -1,0 +1,26 @@
+slos:
+  - name: api-availability
+    description: "API availability target"
+    target: 99.9
+    window: 30d
+    indicator:
+      type: availability
+      good: "http_status < 500"
+      total: "all requests"
+
+  - name: api-latency
+    description: "API latency P95 target"
+    target: 95.0
+    window: 30d
+    indicator:
+      type: latency
+      threshold_ms: 500
+      percentile: 95
+
+  - name: forecast-accuracy
+    description: "Forecast MAPE target"
+    target: 85.0
+    window: 7d
+    indicator:
+      type: quality
+      metric: "1 - MAPE"

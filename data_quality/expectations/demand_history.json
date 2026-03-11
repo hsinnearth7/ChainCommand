@@ -1,0 +1,118 @@
+{
+  "expectation_suite_name": "demand_history",
+  "ge_cloud_id": null,
+  "data_asset_type": null,
+  "meta": {
+    "great_expectations_version": "0.18.0",
+    "description": "Expectations for demand history data used in forecasting"
+  },
+  "expectations": [
+    {
+      "expectation_type": "expect_table_columns_to_match_ordered_list",
+      "kwargs": {
+        "column_list": ["date", "product_id", "demand", "region", "channel"]
+      },
+      "meta": {
+        "notes": "Ensure all required columns are present in the correct order"
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": {
+        "column": "date"
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": {
+        "column": "product_id"
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": {
+        "column": "demand"
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_of_type",
+      "kwargs": {
+        "column": "date",
+        "type_": "datetime64[ns]"
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_of_type",
+      "kwargs": {
+        "column": "demand",
+        "type_": "float64"
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_of_type",
+      "kwargs": {
+        "column": "product_id",
+        "type_": "str"
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": {
+        "column": "demand",
+        "min_value": 0,
+        "max_value": null,
+        "strict_min": false
+      },
+      "meta": {
+        "notes": "Demand must be non-negative"
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": {
+        "column": "date",
+        "min_value": "2020-01-01",
+        "max_value": "2030-12-31",
+        "parse_strings_as_datetimes": true
+      },
+      "meta": {
+        "notes": "Dates must be within a reasonable range"
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_match_regex",
+      "kwargs": {
+        "column": "product_id",
+        "regex": "^[A-Z]{2,4}-\\d{3,6}$"
+      },
+      "meta": {
+        "notes": "Product IDs follow pattern like SKU-12345 or PROD-001"
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_in_set",
+      "kwargs": {
+        "column": "channel",
+        "value_set": ["online", "retail", "wholesale", "direct"]
+      }
+    },
+    {
+      "expectation_type": "expect_table_row_count_to_be_between",
+      "kwargs": {
+        "min_value": 100,
+        "max_value": null
+      },
+      "meta": {
+        "notes": "Must have at least 100 rows for meaningful analysis"
+      }
+    },
+    {
+      "expectation_type": "expect_column_proportion_of_unique_values_to_be_between",
+      "kwargs": {
+        "column": "product_id",
+        "min_value": 0.001,
+        "max_value": 1.0
+      }
+    }
+  ]
+}

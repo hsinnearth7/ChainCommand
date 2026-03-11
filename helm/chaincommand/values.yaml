@@ -1,0 +1,77 @@
+replicaCount: 2
+
+image:
+  repository: chaincommand
+  tag: latest
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  host: chaincommand.local
+  tls: []
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+postgresql:
+  enabled: true
+  auth:
+    database: chaincommand
+    username: chaincommand
+    existingSecret: ""
+  primary:
+    persistence:
+      size: 1Gi
+
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: false
+
+config:
+  llmMode: mock
+  logLevel: INFO
+  simulationSpeed: "1.0"
+  orchestratorMode: classic
+  rateLimitPerMinute: "60"
+
+secrets:
+  apiKey: change-me-api-key
+  openaiApiKey: change-me-openai-key
+
+probes:
+  liveness:
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+  readiness:
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

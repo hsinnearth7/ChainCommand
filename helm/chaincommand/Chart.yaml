@@ -1,0 +1,16 @@
+apiVersion: v2
+name: chaincommand
+description: A Helm chart for ChainCommand supply chain AI platform
+type: application
+version: 0.1.0
+appVersion: "2.0.0"
+maintainers:
+  - name: ChainCommand Team
+keywords:
+  - supply-chain
+  - ai
+  - forecasting
+  - optimization
+home: https://github.com/chaincommand/chaincommand
+sources:
+  - https://github.com/chaincommand/chaincommand

@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chaincommand-config
+  namespace: chaincommand
+  labels:
+    app.kubernetes.io/name: chaincommand
+data:
+  CC_LLM_MODE: "mock"
+  CC_LOG_LEVEL: "INFO"
+  CC_SIMULATION_SPEED: "1.0"
+  CC_ORCHESTRATOR_MODE: "classic"
+  CC_RATE_LIMIT_PER_MINUTE: "60"

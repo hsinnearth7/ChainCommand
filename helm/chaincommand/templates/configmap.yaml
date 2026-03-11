@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "chaincommand.fullname" . }}-config
+  labels:
+    {{- include "chaincommand.labels" . | nindent 4 }}
+data:
+  CC_LLM_MODE: {{ .Values.config.llmMode | quote }}
+  CC_LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  CC_SIMULATION_SPEED: {{ .Values.config.simulationSpeed | quote }}
+  CC_ORCHESTRATOR_MODE: {{ .Values.config.orchestratorMode | quote }}
+  CC_RATE_LIMIT_PER_MINUTE: {{ .Values.config.rateLimitPerMinute | quote }}
