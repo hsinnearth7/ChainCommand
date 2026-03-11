@@ -8,9 +8,9 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections import deque
 from datetime import datetime, timezone
 from typing import Any
-from collections import deque
 
 try:
     import structlog

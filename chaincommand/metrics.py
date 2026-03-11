@@ -1,17 +1,14 @@
 """Prometheus metrics for ChainCommand."""
 from __future__ import annotations
 
-import time
-from typing import Callable, Any
-
 try:
     from prometheus_client import (
+        CONTENT_TYPE_LATEST,
         Counter,
-        Histogram,
         Gauge,
+        Histogram,
         Info,
         generate_latest,
-        CONTENT_TYPE_LATEST,
     )
 
     HAS_PROMETHEUS = True

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -10,8 +9,9 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 try:
-    import mlflow
     from mlflow.tracking import MlflowClient
+
+    import mlflow
 
     HAS_MLFLOW = True
 except ImportError:

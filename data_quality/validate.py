@@ -1,7 +1,6 @@
 """Data quality validation using Great Expectations."""
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -10,7 +9,6 @@ logger = logging.getLogger(__name__)
 
 try:
     import great_expectations as gx
-    from great_expectations.core.batch import BatchRequest
 
     HAS_GX = True
 except ImportError:

@@ -1,10 +1,11 @@
 """BentoML service for ChainCommand ML model serving."""
 from __future__ import annotations
 
+from typing import Any
+
 import bentoml
 import numpy as np
 import pandas as pd
-from typing import Any
 
 
 @bentoml.service(
@@ -17,8 +18,8 @@ class ChainCommandService:
 
     def __init__(self) -> None:
         # Lazy import to avoid circular deps at module level
-        from chaincommand.models.forecaster import EnsembleForecaster
         from chaincommand.models.anomaly_detector import AnomalyDetector
+        from chaincommand.models.forecaster import EnsembleForecaster
         from chaincommand.models.optimizer import HybridOptimizer
 
         self.forecaster = EnsembleForecaster()
