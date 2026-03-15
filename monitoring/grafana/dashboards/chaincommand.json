@@ -98,7 +98,7 @@
       ]
     },
     {
-      "title": "Active Agents",
+      "title": "RL Reward (Avg)",
       "type": "stat",
       "gridPos": { "h": 4, "w": 6, "x": 0, "y": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -108,8 +108,8 @@
           "thresholds": {
             "steps": [
               { "color": "red", "value": null },
-              { "color": "yellow", "value": 3 },
-              { "color": "green", "value": 8 }
+              { "color": "yellow", "value": -50 },
+              { "color": "green", "value": 0 }
             ]
           }
         },
@@ -125,8 +125,8 @@
       },
       "targets": [
         {
-          "expr": "chaincommand_active_agents",
-          "legendFormat": "Active Agents",
+          "expr": "chaincommand_rl_reward",
+          "legendFormat": "RL Reward",
           "refId": "A"
         }
       ]
@@ -235,8 +235,8 @@
       ]
     },
     {
-      "title": "Token Budget Usage",
-      "type": "gauge",
+      "title": "High Risk Suppliers",
+      "type": "stat",
       "gridPos": { "h": 8, "w": 6, "x": 0, "y": 20 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
@@ -245,27 +245,23 @@
           "thresholds": {
             "steps": [
               { "color": "green", "value": null },
-              { "color": "yellow", "value": 50 },
-              { "color": "orange", "value": 75 },
-              { "color": "red", "value": 90 }
+              { "color": "yellow", "value": 2 },
+              { "color": "orange", "value": 5 },
+              { "color": "red", "value": 8 }
             ]
-          },
-          "min": 0,
-          "max": 100,
-          "unit": "percent"
+          }
         },
         "overrides": []
       },
       "options": {
-        "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"] },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
       },
       "targets": [
         {
-          "expr": "100 - (chaincommand_token_budget_remaining / 10000 * 100)",
-          "legendFormat": "Budget Used",
+          "expr": "chaincommand_risk_high_count",
+          "legendFormat": "High Risk Suppliers",
           "refId": "A"
         }
       ]
@@ -335,7 +331,7 @@
   ],
   "refresh": "10s",
   "schemaVersion": 39,
-  "tags": ["chaincommand", "supply-chain", "ai"],
+  "tags": ["chaincommand", "supply-chain", "optimization"],
   "templating": { "list": [] },
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "chaincommand"
-version = "2.0.0"
-description = "Proactive Virtual Supply Chain AI Team"
+version = "3.0.0"
+description = "Supply Chain Risk & Inventory Ops — CP-SAT + RL + BOM + CTB"
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.0",
@@ -14,14 +14,11 @@ dependencies = [
     "pandas>=2.0",
     "scikit-learn>=1.4",
     "structlog>=23.0",
-    "rich>=13.0",
 ]
 
 [project.optional-dependencies]
-langgraph = ["langgraph>=0.2", "langgraph-checkpoint-sqlite>=2.0"]
 ortools = ["ortools>=9.8"]
-causal = ["dowhy>=0.11", "networkx>=3.0"]
-chronos = ["chronos-forecasting>=1.0", "torch>=2.0"]
+rl = ["gymnasium>=1.0", "stable-baselines3>=2.3"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
@@ -35,7 +32,7 @@ dev = [
     "uvicorn>=0.29",
 ]
 all = [
-    "chaincommand[langgraph,ortools,causal,chronos,dev]",
+    "chaincommand[ortools,rl,dev]",
 ]
 
 [tool.setuptools.packages.find]

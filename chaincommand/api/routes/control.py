@@ -1,4 +1,4 @@
-"""Control routes — simulation start/stop/speed, agent triggers."""
+"""Control routes — simulation start/stop/speed."""
 
 from __future__ import annotations
 
@@ -46,22 +46,6 @@ async def set_speed(speed: float):
     settings.simulation_speed = speed
     log.info("simulation_speed_changed", speed=speed)
     return {"status": "ok", "speed": speed}
-
-
-@router.post("/agents/{agent_name}/trigger")
-async def trigger_agent(agent_name: str):
-    """Manually trigger a specific agent's cycle."""
-    from ...orchestrator import _runtime
-
-    agents = _runtime.agents or {}
-    agent = agents.get(agent_name)
-    if agent is None:
-        available = list(agents.keys())
-        return {"error": f"Agent '{agent_name}' not found", "available": available}
-
-    context = {"products": _runtime.products or [], "manual_trigger": True}
-    result = await agent.run_cycle(context)
-    return {"agent": agent_name, "result": result}
 
 
 @router.get("/simulation/status")

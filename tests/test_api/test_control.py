@@ -52,11 +52,13 @@ class TestSimulationControl:
         assert data["speed"] == 2.0
 
     @pytest.mark.asyncio
-    async def test_trigger_agent_not_found(self, client, auth_headers, mock_runtime):
-        with patch("chaincommand.orchestrator._runtime", mock_runtime):
-            resp = await client.post(
-                "/api/agents/nonexistent/trigger",
-                headers=auth_headers,
-            )
+    async def test_simulation_stop(self, client, auth_headers):
+        mock_orch = MagicMock()
+        mock_orch.stop_loop = MagicMock(return_value=None)
+        # Make stop_loop an async mock
+        import asyncio
+        mock_orch.stop_loop = lambda: asyncio.sleep(0)
+
+        with patch("chaincommand.orchestrator.get_orchestrator", return_value=mock_orch):
+            resp = await client.post("/api/simulation/stop", headers=auth_headers)
             assert resp.status_code == 200
-            assert "error" in resp.json()

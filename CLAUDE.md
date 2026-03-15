@@ -1,7 +1,7 @@
 # ChainCommand — Claude Code Guide
 
 ## Project Overview
-ChainCommand is a supply chain AI agent system with 10 autonomous agents, ML forecasting, optimization, and event-driven architecture.
+ChainCommand is a supply chain risk and inventory operations platform combining CP-SAT constraint optimization, RL inventory policy, BOM management, supplier risk scoring, and CTB (Clear-to-Build) analysis.
 
 ## Quick Start
 ```bash
@@ -11,52 +11,53 @@ pytest tests/ -v                  # Run tests
 ruff check chaincommand/ tests/   # Lint
 ```
 
-## Architecture (v2.0)
-- **10 agents** across 4 layers (strategic/tactical/operational/orchestration)
-- **Orchestration**: Classic sequential OR LangGraph state machine (`CC_ORCHESTRATOR_MODE`)
-- **Forecasting**: LSTM + XGBoost ensemble + optional Chronos-2
-- **Optimization**: GA + DQN hybrid + OR-Tools CP-SAT (supplier allocation)
-- **Causal**: DoWhy causal inference for supplier switching decisions
-- **Observability**: AgentTracer, TokenBudget, ResponseCache
-- **Resilience**: CircuitBreaker, GracefulDegradation (4 levels)
+## Architecture (v3.0)
+- **CP-SAT Optimization**: OR-Tools MILP solver for multi-supplier allocation
+- **RL Inventory Policy**: PPO (Stable-Baselines3) with (s,S) baseline comparison
+- **BOM Management**: Multi-tier BOM tree, explosion, where-used, cost rollup
+- **Supplier Risk Scoring**: 5-factor rule-based + RandomForest ML blending
+- **CTB Dashboard**: Clear-to-Build analysis with shortage detection
+- **ML Models**: LSTM + XGBoost ensemble forecaster, Isolation Forest anomaly detector
+- **Event Bus**: Async pub/sub for KPI violations and alerts
+- **AWS Backend**: Optional S3/Redshift/Athena/QuickSight persistence
 
 ## Key Directories
-- `chaincommand/agents/` — 10 agent implementations
-- `chaincommand/models/` — ML models (forecaster, anomaly_detector, optimizer, chronos)
 - `chaincommand/optimization/` — CP-SAT MILP optimizer + benchmark
-- `chaincommand/causal/` — DoWhy causal inference
+- `chaincommand/rl/` — RL inventory environment, trainer, policy
+- `chaincommand/bom/` — BOM tree models + manager
+- `chaincommand/risk/` — Supplier risk scoring (rule-based + ML)
+- `chaincommand/ctb/` — Clear-to-Build analyzer
+- `chaincommand/models/` — ML models (forecaster, anomaly_detector, optimizer)
 - `chaincommand/kpi/` — 12-metric KPI engine
 - `chaincommand/events/` — Async pub/sub event bus
 - `chaincommand/api/` — FastAPI REST + WebSocket
 - `chaincommand/aws/` — AWS persistence (S3/Redshift/Athena/QuickSight)
-- `tests/` — 120+ tests across 10 test modules
+- `tests/` — 100+ tests across test modules
 
 ## Configuration
-All settings via `CC_` env prefix or `.env` file. Key v2.0 settings:
-- `CC_ORCHESTRATOR_MODE`: classic | langgraph
-- `CC_ENABLE_CAUSAL_ANALYSIS`: true/false
-- `CC_ENABLE_CHRONOS`: true/false
-- `CC_TOKEN_BUDGET_PER_CYCLE`: token limit per decision cycle
-- `CC_CIRCUIT_BREAKER_FAILURE_THRESHOLD`: failures before circuit opens
+All settings via `CC_` env prefix or `.env` file. Key settings:
+- `CC_ORTOOLS_RISK_LAMBDA`: Risk-cost trade-off for CP-SAT (default: 0.3)
+- `CC_RL_TOTAL_TIMESTEPS`: RL training steps (default: 50000)
+- `CC_BOM_DEFAULT_ASSEMBLIES`: Synthetic BOM count (default: 5)
+- `CC_CTB_DEFAULT_BUILD_QTY`: Default build quantity for CTB (default: 100)
 
 ## Testing
 ```bash
 pytest tests/ -v --tb=short       # All tests
 pytest tests/test_optimization/   # CP-SAT tests only
-pytest tests/test_causal/         # Causal inference tests
-pytest tests/test_resilience/     # Circuit breaker tests
+pytest tests/test_rl/             # RL inventory tests
+pytest tests/test_bom/            # BOM tests
+pytest tests/test_ctb/            # CTB tests
+pytest tests/test_risk/           # Risk scoring tests
 ```
 
 ## Development Guidelines
-- Always JSON-serialize datetime objects and numpy types before sending through WebSocket. Use `SafeEncoder` (see root CLAUDE.md).
-- Test WebSocket `/ws/live` endpoint immediately after changes to catch routing/serialization issues.
+- Always JSON-serialize datetime objects and numpy types before sending through WebSocket.
 - After editing Python files, verify syntax with `python -m py_compile <file>`.
 - Run `pytest tests/ -v` after code changes, not as a final step.
 
 ## Dependencies
 Core deps always installed. Optional groups:
-- `pip install -e ".[langgraph]"` — LangGraph orchestrator
 - `pip install -e ".[ortools]"` — OR-Tools CP-SAT
-- `pip install -e ".[causal]"` — DoWhy
-- `pip install -e ".[chronos]"` — Chronos-2
+- `pip install -e ".[rl]"` — Gymnasium + Stable-Baselines3
 - `pip install -e ".[all]"` — Everything

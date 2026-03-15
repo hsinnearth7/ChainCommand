@@ -50,8 +50,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(
     title="ChainCommand",
-    description="Autonomous Supply Chain Optimizer — AI Agent Team",
-    version="1.0.0",
+    description="Supply Chain Risk & Inventory Ops — CP-SAT + RL + BOM + CTB",
+    version="3.0.0",
     lifespan=lifespan,
 )
 
@@ -76,7 +76,7 @@ app.include_router(control_router, prefix="/api")
 async def root():
     return {
         "name": "ChainCommand",
-        "version": "1.0.0",
+        "version": "3.0.0",
         "status": "running",
         "docs": "/docs",
     }
@@ -84,7 +84,7 @@ async def root():
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "ok", "name": "ChainCommand", "version": "1.0.0"}
+    return {"status": "ok", "name": "ChainCommand", "version": "3.0.0"}
 
 
 def _json_serial(obj):
@@ -96,10 +96,8 @@ def _json_serial(obj):
 
 @app.websocket("/ws/live")
 async def websocket_live(websocket: WebSocket):
-    """Live event stream via WebSocket (top-level route)."""
-    # Auth check
+    """Live event stream via WebSocket."""
     await require_ws_api_key(websocket)
-
     await websocket.accept()
     log.info("ws_client_connected")
 
@@ -120,7 +118,6 @@ async def websocket_live(websocket: WebSocket):
                     data = evt.model_dump()
                     text = json.dumps(data, default=_json_serial)
                     await websocket.send_text(text)
-            # Cap memory
             if len(seen_ids) > 5000:
                 seen_ids = set(list(seen_ids)[-2000:])
     except WebSocketDisconnect:

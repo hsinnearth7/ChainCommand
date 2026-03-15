@@ -18,11 +18,11 @@ default_args = {
 with DAG(
     dag_id="chaincommand_training_pipeline",
     default_args=default_args,
-    description="End-to-end ML training pipeline for ChainCommand supply chain models",
+    description="ML + RL training pipeline for ChainCommand supply chain optimization",
     schedule="0 2 * * 1",  # Every Monday at 2 AM
     start_date=datetime(2025, 1, 1),
     catchup=False,
-    tags=["ml", "training", "supply-chain"],
+    tags=["ml", "rl", "training", "supply-chain"],
 ) as dag:
 
     validate_data = BashOperator(
@@ -50,6 +50,11 @@ with DAG(
         bash_command="python -m chaincommand.models.optimizer --train",
     )
 
+    train_rl_policy = BashOperator(
+        task_id="train_rl_policy",
+        bash_command="python -c 'from chaincommand.rl import RLInventoryPolicy; p = RLInventoryPolicy(); p.train()'",
+    )
+
     evaluate_models = BashOperator(
         task_id="evaluate_models",
         bash_command="python -m chaincommand.models.evaluate --all",
@@ -67,6 +72,6 @@ with DAG(
     )
 
     validate_data >> generate_features
-    generate_features >> [train_forecaster, train_anomaly_detector, train_optimizer]
-    [train_forecaster, train_anomaly_detector, train_optimizer] >> evaluate_models
+    generate_features >> [train_forecaster, train_anomaly_detector, train_optimizer, train_rl_policy]
+    [train_forecaster, train_anomaly_detector, train_optimizer, train_rl_policy] >> evaluate_models
     evaluate_models >> register_models >> promote_champion

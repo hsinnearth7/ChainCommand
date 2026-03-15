@@ -1,7 +1,7 @@
 """CLI entry point for ChainCommand.
 
 Usage:
-    python -m chaincommand           Start API server + simulation
+    python -m chaincommand           Start API server
     python -m chaincommand --demo    Run one demo cycle and exit
 """
 
@@ -15,24 +15,11 @@ import sys
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="chaincommand",
-        description="ChainCommand — Autonomous Supply Chain Optimizer AI Team",
+        description="ChainCommand — Supply Chain Risk & Inventory Ops",
     )
-    parser.add_argument(
-        "--demo",
-        action="store_true",
-        help="Run a single demo cycle (no server)",
-    )
-    parser.add_argument(
-        "--host",
-        default=None,
-        help="Server host (default from config)",
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=None,
-        help="Server port (default from config)",
-    )
+    parser.add_argument("--demo", action="store_true", help="Run a single demo cycle (no server)")
+    parser.add_argument("--host", default=None, help="Server host (default from config)")
+    parser.add_argument("--port", type=int, default=None, help="Server port (default from config)")
     args = parser.parse_args()
 
     if args.demo:
@@ -42,50 +29,12 @@ def main() -> None:
 
 
 async def _run_demo() -> None:
-    """Run one full decision cycle with Rich terminal UI."""
-    from .orchestrator import ChainCommandOrchestrator
-
-    try:
-        from .ui import ChainCommandUI
-        _rich_available = True
-    except ImportError:
-        _rich_available = False
-
-    if not _rich_available:
-        await _run_demo_plain()
-        return
-
-    ui = ChainCommandUI()
-    orchestrator = ChainCommandOrchestrator(ui_callback=ui)
-
-    ui.print_header()
-
-    # ── Initialization ──────────────────────────────────
-    with ui.init_progress():
-        await orchestrator.initialize()
-    ui.print_init_complete()
-
-    # ── Decision Cycle ──────────────────────────────────
-    with ui.cycle_progress():
-        result = await orchestrator.run_cycle()
-
-    # ── Results ─────────────────────────────────────────
-    ui.print_cycle_timing()
-    ui.print_kpi_dashboard(result.get("kpi", {}))
-    ui.print_agent_summary_tree(result.get("agent_results", {}))
-    ui.print_event_log()
-    ui.print_footer()
-
-    await orchestrator.shutdown()
-
-
-async def _run_demo_plain() -> None:
-    """Fallback: plain-text demo when rich is not installed."""
+    """Run one full optimization cycle."""
     from .orchestrator import ChainCommandOrchestrator
 
     print("=" * 70)
     print("  ChainCommand — Demo Mode")
-    print("  Running one full decision cycle with 10 AI agents...")
+    print("  Running optimization cycle: ML → BOM → RL → Risk → CP-SAT → CTB")
     print("=" * 70)
     print()
 
@@ -98,7 +47,6 @@ async def _run_demo_plain() -> None:
     print("=" * 70)
     print(f"  Cycle:           {result['cycle']}")
     print(f"  KPI Violations:  {result['violations']}")
-    print(f"  Report ID:       {result.get('report')}")
     print()
 
     kpi = result.get("kpi", {})
@@ -109,14 +57,22 @@ async def _run_demo_plain() -> None:
     print(f"    DSI:               {kpi.get('dsi', 0):.1f} days")
     print(f"    Stockout Count:    {kpi.get('stockout_count', 0)}")
     print(f"    Inventory Value:   ${kpi.get('total_inventory_value', 0):,.0f}")
-    print(f"    Inventory Turnover:{kpi.get('inventory_turnover', 0):.1f}")
-    print(f"    Perfect Order:     {kpi.get('perfect_order_rate', 0):.1%}")
-    print()
 
-    print("  Agent Summaries:")
-    for agent_name, summary in result.get("agent_results", {}).items():
-        short = (summary[:80] + "...") if len(summary) > 80 else summary
-        print(f"    {agent_name:25s} {short}")
+    if "risk" in result:
+        print()
+        print("  Risk Assessment:")
+        print(f"    Suppliers scored:  {result['risk']['scored']}")
+        print(f"    High-risk:         {result['risk']['high_risk_count']}")
+
+    if "rl_decisions" in result:
+        print(f"  RL Decisions:        {result['rl_decisions']}")
+
+    if "ctb" in result:
+        print()
+        print("  CTB Reports:")
+        for ctb in result["ctb"]:
+            status = "CLEAR" if ctb["is_clear"] else f"SHORT ({ctb['shortages']} parts)"
+            print(f"    {ctb['assembly_id']:15s} {ctb['clear_pct']:5.1f}% — {status}")
 
     print()
     print("=" * 70)

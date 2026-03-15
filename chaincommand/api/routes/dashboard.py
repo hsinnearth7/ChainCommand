@@ -1,4 +1,4 @@
-"""Dashboard routes — KPI, inventory, agents, events, forecasts, approvals, AWS."""
+"""Dashboard routes — KPI, inventory, BOM, risk, CTB, forecast, approvals, AWS."""
 
 from __future__ import annotations
 
@@ -77,18 +77,75 @@ async def get_inventory_status(product_id: Optional[str] = None):
     return {"products": items, "count": len(items)}
 
 
-# ── Agents ───────────────────────────────────────────────────
+# ── BOM ──────────────────────────────────────────────────────
 
-@router.get("/agents/status")
-async def get_agents_status():
-    """Get status of all agents."""
+@router.get("/bom/summary")
+async def get_bom_summary():
+    """Get BOM management summary."""
     from ...orchestrator import _runtime
 
-    agents = _runtime.agents or {}
+    if not _runtime.bom_manager:
+        return {"error": "BOM manager not initialized"}
+    return _runtime.bom_manager.get_summary()
+
+
+@router.get("/bom/risks")
+async def get_bom_risks():
+    """Get single-source and long-lead-time risks."""
+    from ...orchestrator import _runtime
+
+    if not _runtime.bom_manager:
+        return {"error": "BOM manager not initialized"}
     return {
-        "agents": {name: agent.get_status() for name, agent in agents.items()},
-        "count": len(agents),
+        "single_source": _runtime.bom_manager.find_single_source_risks(),
+        "long_lead": _runtime.bom_manager.find_long_lead_items(settings.bom_long_lead_threshold_days),
     }
+
+
+# ── Risk Scoring ─────────────────────────────────────────────
+
+@router.get("/risk/scores")
+async def get_risk_scores(limit: int = Query(default=20, ge=1, le=100)):
+    """Get supplier risk scores."""
+    from ...orchestrator import _runtime
+
+    if not _runtime.risk_scorer or not _runtime.suppliers:
+        return {"scores": [], "count": 0}
+
+    from ...risk.scorer import SupplierMetrics
+
+    scores = []
+    for s in _runtime.suppliers[:limit]:
+        metrics = SupplierMetrics(
+            supplier_id=s.supplier_id,
+            on_time_rate=s.on_time_rate,
+            defect_rate=s.defect_rate,
+            lead_time_mean=s.lead_time_mean,
+            lead_time_std=s.lead_time_std,
+        )
+        score = _runtime.risk_scorer.score_supplier(metrics)
+        scores.append({
+            "supplier_id": s.supplier_id,
+            "name": s.name,
+            "overall_score": score.overall_score,
+            "risk_level": score.risk_level,
+            "delivery_risk": score.delivery_risk,
+            "quality_risk": score.quality_risk,
+            "recommendations": score.recommendations,
+        })
+    scores.sort(key=lambda x: -x["overall_score"])
+    return {"scores": scores, "count": len(scores)}
+
+
+# ── CTB ──────────────────────────────────────────────────────
+
+@router.get("/ctb/status")
+async def get_ctb_status():
+    """Get Clear-to-Build status for all assemblies."""
+    from ...orchestrator import _runtime
+
+    results = _runtime.last_cycle_results.get("ctb", [])
+    return {"reports": results, "count": len(results)}
 
 
 # ── Events ───────────────────────────────────────────────────
@@ -105,16 +162,6 @@ async def get_recent_events(limit: int = Query(default=50, ge=1, le=200)):
         "events": [e.model_dump() for e in reversed(events)],
         "count": len(events),
     }
-
-
-def _get_recent_events(limit: int = 20) -> list[dict]:
-    """Helper for WebSocket: return recent events as dicts."""
-    from ...orchestrator import _runtime
-
-    if not _runtime.event_bus:
-        return []
-    events = _runtime.event_bus.recent_events[-limit:]
-    return [e.model_dump() for e in events]
 
 
 # ── Forecast ─────────────────────────────────────────────────
@@ -182,9 +229,6 @@ async def get_aws_status():
         "backend": backend_type,
         "region": settings.aws_region,
         "s3_bucket": settings.aws_s3_bucket,
-        "redshift_host": settings.aws_redshift_host or "(not configured)",
-        "athena_database": settings.aws_athena_database,
-        "quicksight_account": settings.aws_quicksight_account_id or "(not configured)",
     }
 
 
@@ -200,35 +244,3 @@ async def get_aws_kpi_trend(
         return {"error": "AWS backend not enabled", "data": []}
     data = await _runtime.backend.query_kpi_trend(metric, days)
     return {"metric": metric, "days": days, "data": data}
-
-
-@router.get("/aws/query")
-async def run_aws_query(
-    event_type: str = Query(..., min_length=1),
-    limit: int = Query(default=50, ge=1, le=500),
-):
-    """Execute an Athena ad-hoc query for events by type."""
-    from ...orchestrator import _runtime
-
-    if not _runtime.backend or not settings.aws_enabled:
-        return {"error": "AWS backend not enabled", "data": []}
-    data = await _runtime.backend.query_events(event_type, limit)
-    return {"event_type": event_type, "limit": limit, "data": data}
-
-
-@router.get("/aws/dashboards")
-async def list_aws_dashboards():
-    """List QuickSight dashboards (requires AWS backend)."""
-    from ...orchestrator import _runtime
-
-    if not _runtime.backend or not settings.aws_enabled:
-        return {"error": "AWS backend not enabled", "dashboards": []}
-    try:
-        from ...aws.quicksight_client import QuickSightClient
-
-        qs = QuickSightClient()
-        dashboards = qs.list_dashboards()
-        return {"dashboards": dashboards, "count": len(dashboards)}
-    except Exception as exc:
-        log.error("aws_dashboards_error", error=str(exc))
-        return {"error": str(exc), "dashboards": []}

@@ -73,21 +73,27 @@ if HAS_HYPOTHESIS:
             total = sum(result.allocations.values())
             assert total >= demand * 0.99  # allow tiny rounding
 
-        @given(tokens=st.integers(min_value=0, max_value=10000))
+        @given(
+            on_time=st.floats(min_value=0.5, max_value=0.99),
+            defect=st.floats(min_value=0.001, max_value=0.1),
+        )
         @settings(max_examples=20)
-        def test_token_budget_non_negative(self, tokens):
-            from chaincommand.observability import TokenBudget
+        def test_risk_score_in_range(self, on_time, defect):
+            from chaincommand.risk.scorer import SupplierMetrics, SupplierRiskScorer
 
-            budget = TokenBudget(per_cycle=50000, per_agent=10000)
-            budget.consume("agent", tokens)
-            assert budget.remaining("agent") >= 0
-            assert budget.remaining() >= 0
+            scorer = SupplierRiskScorer()
+            metrics = SupplierMetrics(supplier_id="TEST", on_time_rate=on_time, defect_rate=defect)
+            score = scorer.score_supplier(metrics)
+            assert 0 <= score.overall_score <= 1
+            assert score.risk_level in ("low", "medium", "high", "critical")
 
-        @given(n=st.integers(min_value=10, max_value=500))
+        @given(n=st.integers(min_value=1, max_value=10))
         @settings(max_examples=10)
-        def test_causal_data_generation(self, n):
-            from chaincommand.causal.data_generator import generate_supplier_switch_history
+        def test_bom_synthetic_generation(self, n):
+            from chaincommand.bom.manager import BOMManager
 
-            df = generate_supplier_switch_history(n_samples=n)
-            assert len(df) == n
-            assert set(df["switched_supplier"].unique()).issubset({0, 1})
+            mgr = BOMManager()
+            trees = mgr.generate_synthetic_boms(n_assemblies=n)
+            assert len(trees) == n
+            for tree in trees:
+                assert len(tree.root_items) == 1

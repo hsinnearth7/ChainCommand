@@ -2,16 +2,9 @@
 
 from __future__ import annotations
 
-from enum import Enum
 from typing import Optional
 
 from pydantic_settings import BaseSettings
-
-
-class LLMMode(str, Enum):
-    MOCK = "mock"
-    OPENAI = "openai"
-    OLLAMA = "ollama"
 
 
 class Settings(BaseSettings):
@@ -19,42 +12,35 @@ class Settings(BaseSettings):
 
     model_config = {"env_file": ".env", "env_prefix": "CC_"}
 
-    # ── LLM ──────────────────────────────────────────────
-    llm_mode: LLMMode = LLMMode.MOCK
-    openai_api_key: Optional[str] = None
-    openai_model: str = "gpt-4o-mini"
-    ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3"
-
     # ── Simulation ───────────────────────────────────────
     num_products: int = 50
     num_suppliers: int = 20
     history_days: int = 365
-    simulation_speed: float = 1.0  # multiplier for event tick rate
+    simulation_speed: float = 1.0
 
     # ── Event engine ─────────────────────────────────────
     event_tick_seconds: float = 5.0
     enable_proactive_monitoring: bool = True
 
-    # ── KPI thresholds (defaults overridable) ────────────
+    # ── KPI thresholds ───────────────────────────────────
     otif_target: float = 0.95
     fill_rate_target: float = 0.97
-    mape_threshold: float = 15.0  # percent
-    dsi_max: float = 60.0  # days of supply
+    mape_threshold: float = 15.0
+    dsi_max: float = 60.0
     dsi_min: float = 10.0
-    stockout_tolerance: int = 3  # max concurrent stockouts
+    stockout_tolerance: int = 3
 
     # ── Escalation / HITL ────────────────────────────────
-    cost_escalation_threshold: float = 50_000.0  # USD — needs human approval
-    inventory_change_pct_threshold: float = 25.0  # >25% change needs approval
+    cost_escalation_threshold: float = 50_000.0
+    inventory_change_pct_threshold: float = 25.0
     auto_approve_below: float = 10_000.0
 
-    # ── Security ────────────────────────────────────────────
+    # ── Security ─────────────────────────────────────────
     api_key: str = "dev-key-change-me"
     cors_origins: str = "http://localhost:3000,http://localhost:5173"
     rate_limit_per_minute: int = 60
 
-    # ── Reproducibility ────────────────────────────────────
+    # ── Reproducibility ──────────────────────────────────
     random_seed: int = 42
 
     # ── Server ───────────────────────────────────────────
@@ -62,7 +48,7 @@ class Settings(BaseSettings):
     port: int = 8000
     log_level: str = "INFO"
 
-    # ── AWS ───────────────────────────────────────────────
+    # ── AWS ──────────────────────────────────────────────
     aws_enabled: bool = False
     aws_region: str = "ap-northeast-1"
     aws_s3_bucket: str = "chaincommand-data"
@@ -77,7 +63,7 @@ class Settings(BaseSettings):
     aws_athena_output: str = "s3://chaincommand-data/athena-results/"
     aws_quicksight_account_id: str = ""
 
-    # ── ML model params ──────────────────────────────────
+    # ── ML model params ─────────────────────────────────
     lstm_hidden_size: int = 64
     lstm_num_layers: int = 2
     lstm_seq_length: int = 30
@@ -93,27 +79,24 @@ class Settings(BaseSettings):
     dqn_epsilon_end: float = 0.01
     dqn_epsilon_decay: float = 0.995
 
-    # ── v2.0: Orchestrator mode ────────────────────────
-    orchestrator_mode: str = "classic"  # "classic" or "langgraph"
-
-    # ── v2.0: OR-Tools CP-SAT ─────────────────────────
+    # ── CP-SAT Optimization ─────────────────────────────
     ortools_time_limit_ms: int = 10_000
     ortools_risk_lambda: float = 0.3
     ortools_max_suppliers: int = 5
 
-    # ── v2.0: Causal analysis ─────────────────────────
-    enable_causal_analysis: bool = False
+    # ── RL Inventory Policy ──────────────────────────────
+    rl_total_timesteps: int = 50_000
+    rl_episode_length: int = 90
+    rl_holding_cost: float = 0.5
+    rl_stockout_cost: float = 10.0
+    rl_ordering_cost_fixed: float = 50.0
 
-    # ── v2.0: Token budget / cost control ─────────────
-    token_budget_per_cycle: int = 50_000
-    token_budget_per_agent: int = 8_000
+    # ── BOM Management ───────────────────────────────────
+    bom_default_assemblies: int = 5
+    bom_long_lead_threshold_days: int = 14
 
-    # ── v2.0: Circuit breaker ─────────────────────────
-    circuit_breaker_failure_threshold: int = 3
-    circuit_breaker_recovery_timeout: float = 60.0
-
-    # ── v2.0: Chronos ─────────────────────────────────
-    enable_chronos: bool = False
+    # ── CTB (Clear-to-Build) ─────────────────────────────
+    ctb_default_build_qty: float = 100.0
 
 
 settings = Settings()

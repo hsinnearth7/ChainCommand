@@ -26,7 +26,7 @@ log = get_logger(__name__)
 
 @dataclass
 class _RuntimeState:
-    """Mutable global state shared across agents, tools, and API."""
+    """Mutable global state shared across modules and API."""
 
     products: Optional[List[Product]] = None
     suppliers: Optional[List[Supplier]] = None
@@ -42,13 +42,19 @@ class _RuntimeState:
     event_bus: Any = None
     monitor: Any = None
 
-    # Agent registry
-    agents: Dict[str, Any] = field(default_factory=dict)
+    # New modules
+    bom_manager: Any = None
+    rl_policy: Any = None
+    risk_scorer: Any = None
+    ctb_analyzer: Any = None
 
     # Transaction state
     purchase_orders: List[PurchaseOrder] = field(default_factory=list)
     pending_approvals: Dict[str, HumanApprovalRequest] = field(default_factory=dict)
     kpi_history: List[KPISnapshot] = field(default_factory=list)
+
+    # Results cache
+    last_cycle_results: Dict[str, Any] = field(default_factory=dict)
 
     # Persistence backend
     backend: Any = None
@@ -60,13 +66,15 @@ _runtime = _RuntimeState()
 # ── Orchestrator ────────────────────────────────────────────
 
 class ChainCommandOrchestrator:
-    """Main orchestrator that initializes, runs cycles, and shuts down."""
+    """Main orchestrator: initializes modules, runs optimization cycles."""
 
-    def __init__(self, ui_callback: Any = None) -> None:
+    STAGES = ["data", "ml", "engines", "bom", "rl", "risk", "cpsat", "ctb", "kpi"]
+
+    def __init__(self, on_progress: Any = None) -> None:
         self._running = False
         self._cycle_count = 0
         self._loop_task: Optional[asyncio.Task] = None
-        self._ui_callback = ui_callback
+        self._on_progress = on_progress or (lambda *a, **kw: None)
 
     @property
     def running(self) -> bool:
@@ -76,54 +84,40 @@ class ChainCommandOrchestrator:
     def cycle_count(self) -> int:
         return self._cycle_count
 
-    def _ui(self, method: str, *args: Any, **kwargs: Any) -> None:
-        """Safely invoke a UI callback method if present."""
-        if self._ui_callback:
-            fn = getattr(self._ui_callback, method, None)
-            if fn:
-                fn(*args, **kwargs)
-
     async def initialize(self) -> None:
         """Bootstrap the entire system."""
-        setup_logging(quiet=self._ui_callback is not None)
+        setup_logging()
         random.seed(settings.random_seed)
-        log.info("initializing", llm_mode=settings.llm_mode.value)
+        log.info("initializing")
 
         # Phase 0: Generate synthetic data
-        self._ui("on_init_phase_start", 0)
+        self._on_progress("data", "running", {})
         from .data.generator import generate_all
 
-        log.info("generating_data")
         products, suppliers, demand_df = generate_all()
         _runtime.products = products
         _runtime.suppliers = suppliers
         _runtime.demand_df = demand_df
         log.info("data_generated", products=len(products), suppliers=len(suppliers))
-        self._ui("on_init_phase_complete", 0)
+        self._on_progress("data", "completed", {"products": len(products), "suppliers": len(suppliers)})
 
-        # Phase 1: Train forecaster
-        self._ui("on_init_phase_start", 1)
+        # Phase 1: Train ML models
+        self._on_progress("ml", "running", {})
         from .models.forecaster import EnsembleForecaster
-
-        log.info("training_models")
-        _runtime.forecaster = EnsembleForecaster()
-        product_ids = [p.product_id for p in products[:20]]  # Train on first 20 for speed
-        _runtime.forecaster.train_all(demand_df, product_ids)
-        self._ui("on_init_phase_complete", 1)
-
-        # Phase 2: Train anomaly detector + optimizer
-        self._ui("on_init_phase_start", 2)
         from .models.anomaly_detector import AnomalyDetector
         from .models.optimizer import HybridOptimizer
 
+        _runtime.forecaster = EnsembleForecaster()
+        product_ids = [p.product_id for p in products[:20]]
+        _runtime.forecaster.train_all(demand_df, product_ids)
         _runtime.anomaly_detector = AnomalyDetector()
         _runtime.anomaly_detector.train(demand_df)
         _runtime.optimizer = HybridOptimizer()
-        log.info("models_trained")
-        self._ui("on_init_phase_complete", 2)
+        log.info("ml_models_trained")
+        self._on_progress("ml", "completed", {})
 
-        # Phase 3: Initialize engines
-        self._ui("on_init_phase_start", 3)
+        # Phase 2: Initialize engines
+        self._on_progress("engines", "running", {})
         from .events.bus import EventBus
         from .events.monitor import ProactiveMonitor
         from .kpi.engine import KPIEngine
@@ -133,245 +127,190 @@ class ChainCommandOrchestrator:
         _runtime.monitor = ProactiveMonitor(
             _runtime.event_bus, _runtime.kpi_engine, _runtime.anomaly_detector
         )
+        self._on_progress("engines", "completed", {})
 
-        # Register UI event handler if present
-        if self._ui_callback:
-            async def _ui_event_handler(event: Any) -> None:
-                self._ui_callback.on_event(
-                    event_type=event.event_type,
-                    severity=event.severity.value,
-                    source=event.source_agent,
-                    description=event.description,
-                )
-            _runtime.event_bus.subscribe_all(_ui_event_handler)
+        # Phase 3: BOM Management
+        self._on_progress("bom", "running", {})
+        from .bom import BOMManager
 
-        self._ui("on_init_phase_complete", 3)
-
-        # Phase 4: Initialize agents
-        self._ui("on_init_phase_start", 4)
-        from .agents import (
-            AnomalyDetectorAgent,
-            CoordinatorAgent,
-            DemandForecasterAgent,
-            InventoryOptimizerAgent,
-            LogisticsCoordinatorAgent,
-            MarketIntelligenceAgent,
-            ReporterAgent,
-            RiskAssessorAgent,
-            StrategicPlannerAgent,
-            SupplierManagerAgent,
+        _runtime.bom_manager = BOMManager()
+        _runtime.bom_manager.generate_synthetic_boms(
+            n_assemblies=settings.bom_default_assemblies,
+            seed=settings.random_seed,
         )
-        from .llm.factory import create_llm
-        from .tools import (
-            AdjustSafetyStock,
-            AssessSupplyRisk,
-            CalculateReorderPoint,
-            CreatePurchaseOrder,
-            DetectAnomalies,
-            EmitEvent,
-            EvaluateSupplier,
-            GetForecastAccuracy,
-            OptimizeInventory,
-            QueryDemandHistory,
-            QueryInventoryStatus,
-            QueryKPIHistory,
-            QuerySupplierInfo,
-            RequestHumanApproval,
-            RunDemandForecast,
-            ScanMarketIntelligence,
+        bom_summary = _runtime.bom_manager.get_summary()
+        log.info("bom_initialized", **bom_summary)
+        self._on_progress("bom", "completed", bom_summary)
+
+        # Phase 4: RL Inventory Policy
+        self._on_progress("rl", "running", {})
+        from .rl import RLInventoryPolicy
+        from .rl.environment import InventoryEnvConfig
+
+        avg_demand = float(demand_df["quantity"].mean()) if "quantity" in demand_df.columns else 100.0
+        rl_config = InventoryEnvConfig(
+            demand_mean=avg_demand,
+            demand_std=avg_demand * 0.3,
+            episode_length=settings.rl_episode_length,
+            holding_cost_per_unit=settings.rl_holding_cost,
+            stockout_cost_per_unit=settings.rl_stockout_cost,
+            ordering_cost_fixed=settings.rl_ordering_cost_fixed,
         )
-
-        llm = create_llm()
-        log.info("llm_created", mode=settings.llm_mode.value)
-
-        _runtime.agents = {
-            "demand_forecaster": DemandForecasterAgent(
-                llm=llm,
-                tools=[
-                    QueryDemandHistory(), RunDemandForecast(), GetForecastAccuracy(),
-                    ScanMarketIntelligence(), EmitEvent(),
-                ],
-            ),
-            "strategic_planner": StrategicPlannerAgent(
-                llm=llm,
-                tools=[QueryKPIHistory(), OptimizeInventory(), QueryInventoryStatus(), EmitEvent()],
-            ),
-            "inventory_optimizer": InventoryOptimizerAgent(
-                llm=llm,
-                tools=[
-                    QueryInventoryStatus(), CalculateReorderPoint(), AdjustSafetyStock(),
-                    OptimizeInventory(), EmitEvent(),
-                ],
-            ),
-            "supplier_manager": SupplierManagerAgent(
-                llm=llm,
-                tools=[
-                    QuerySupplierInfo(), EvaluateSupplier(), CreatePurchaseOrder(),
-                    RequestHumanApproval(), EmitEvent(),
-                ],
-            ),
-            "logistics_coordinator": LogisticsCoordinatorAgent(
-                llm=llm,
-                tools=[QueryInventoryStatus(), EmitEvent()],
-            ),
-            "anomaly_detector": AnomalyDetectorAgent(
-                llm=llm,
-                tools=[DetectAnomalies(), QueryDemandHistory(), QueryInventoryStatus(), EmitEvent()],
-            ),
-            "risk_assessor": RiskAssessorAgent(
-                llm=llm,
-                tools=[AssessSupplyRisk(), ScanMarketIntelligence(), QuerySupplierInfo(), EmitEvent()],
-            ),
-            "market_intelligence": MarketIntelligenceAgent(
-                llm=llm,
-                tools=[ScanMarketIntelligence(), EmitEvent()],
-            ),
-            "coordinator": CoordinatorAgent(
-                llm=llm,
-                tools=[
-                    QueryKPIHistory(), QueryInventoryStatus(), QuerySupplierInfo(),
-                    QueryDemandHistory(), RequestHumanApproval(), EmitEvent(),
-                ],
-            ),
-            "reporter": ReporterAgent(
-                llm=llm,
-                tools=[QueryKPIHistory(), QueryInventoryStatus(), EmitEvent()],
-            ),
-        }
-
-        # Set up event subscriptions
-        bus = _runtime.event_bus
-        agents = _runtime.agents
-
-        bus.subscribe("kpi_threshold_violated", agents["demand_forecaster"].handle_event)
-        bus.subscribe("new_market_intel", agents["demand_forecaster"].handle_event)
-        bus.subscribe("forecast_updated", agents["strategic_planner"].handle_event)
-        bus.subscribe("kpi_trend_alert", agents["strategic_planner"].handle_event)
-        bus.subscribe("low_stock_alert", agents["inventory_optimizer"].handle_event)
-        bus.subscribe("overstock_alert", agents["inventory_optimizer"].handle_event)
-        bus.subscribe("stockout_alert", agents["inventory_optimizer"].handle_event)
-        bus.subscribe("forecast_updated", agents["inventory_optimizer"].handle_event)
-        bus.subscribe("reorder_triggered", agents["supplier_manager"].handle_event)
-        bus.subscribe("supplier_issue", agents["supplier_manager"].handle_event)
-        bus.subscribe("quality_alert", agents["supplier_manager"].handle_event)
-        bus.subscribe("po_created", agents["logistics_coordinator"].handle_event)
-        bus.subscribe("delivery_delayed", agents["logistics_coordinator"].handle_event)
-        bus.subscribe("anomaly_detected", agents["risk_assessor"].handle_event)
-        bus.subscribe("supply_risk_alert", agents["risk_assessor"].handle_event)
-        bus.subscribe("cycle_complete", agents["reporter"].handle_event)
-        bus.subscribe("kpi_snapshot_created", agents["reporter"].handle_event)
-
-        # Coordinator listens to everything
-        bus.subscribe_all(agents["coordinator"].handle_event)
-
-        log.info("agents_initialized", count=len(_runtime.agents))
-        self._ui("on_init_phase_complete", 4)
-
-        # Phase 5: Compute initial KPI snapshot
-        self._ui("on_init_phase_start", 5)
-        _runtime.kpi_engine.calculate_snapshot(
-            products, _runtime.purchase_orders, suppliers
+        _runtime.rl_policy = RLInventoryPolicy(rl_config)
+        rl_result = _runtime.rl_policy.train(
+            total_timesteps=settings.rl_total_timesteps,
+            seed=settings.random_seed,
         )
+        log.info(
+            "rl_trained",
+            method=rl_result.method,
+            improvement_pct=rl_result.improvement_pct,
+        )
+        self._on_progress("rl", "completed", {
+            "method": rl_result.method,
+            "mean_reward": rl_result.mean_reward,
+            "improvement_pct": rl_result.improvement_pct,
+        })
 
-        log.info("system_ready")
-        self._ui("on_init_phase_complete", 5)
+        # Phase 5: Risk Scoring
+        self._on_progress("risk", "running", {})
+        from .risk import SupplierRiskScorer
+        from .risk.scorer import SupplierMetrics
 
-        # Phase 6: Initialize persistence backend
+        _runtime.risk_scorer = SupplierRiskScorer()
+        # Train ML risk model on synthetic history
+        history = _runtime.risk_scorer.generate_synthetic_history(n_suppliers=100, seed=settings.random_seed)
+        _runtime.risk_scorer.train_ml_model(history, seed=settings.random_seed)
+        log.info("risk_scorer_initialized")
+        self._on_progress("risk", "completed", {})
+
+        # Phase 6: Initial KPI snapshot
+        self._on_progress("kpi", "running", {})
+        _runtime.kpi_engine.calculate_snapshot(products, _runtime.purchase_orders, suppliers)
+        log.info("initial_kpi_computed")
+        self._on_progress("kpi", "completed", {})
+
+        # Phase 7: AWS backend
         from .aws import get_backend
 
         _runtime.backend = get_backend()
         await _runtime.backend.setup()
         if _runtime.demand_df is not None:
             await _runtime.backend.persist_demand_history(_runtime.demand_df)
-        log.info("persistence_backend_ready", backend=type(_runtime.backend).__name__)
+
+        log.info("system_ready")
 
     async def run_cycle(self) -> Dict[str, Any]:
-        """Execute one full decision cycle across all agent layers."""
+        """Execute one optimization cycle."""
         self._cycle_count += 1
         log.info("cycle_start", cycle=self._cycle_count)
 
         products = _runtime.products or []
-        context = {"products": products, "cycle": self._cycle_count}
-        agent_results: Dict[str, Any] = {}
+        suppliers = _runtime.suppliers or []
+        results: Dict[str, Any] = {"cycle": self._cycle_count}
 
-        agents = _runtime.agents
+        # Step 1: Anomaly detection
+        if _runtime.anomaly_detector and _runtime.demand_df is not None:
+            anomalies = _runtime.anomaly_detector.detect(products[:10])
+            results["anomalies"] = len(anomalies) if anomalies else 0
 
-        # Step 0: Operational layer — Market Intelligence + Anomaly Detection
-        self._ui("on_cycle_step_start", 0)
-        log.info("cycle_step", step=1, description="Operational layer scan")
-        market_result = await agents["market_intelligence"].run_cycle(context)
-        anomaly_result = await agents["anomaly_detector"].run_cycle(context)
-        agent_results["market_intelligence"] = market_result
-        agent_results["anomaly_detector"] = anomaly_result
-        self._ui("on_cycle_step_complete", 0)
+        # Step 2: Risk scoring for suppliers
+        if _runtime.risk_scorer and suppliers:
+            from .risk.scorer import SupplierMetrics
 
-        # Step 1: Strategic layer — Demand Forecasting
-        self._ui("on_cycle_step_start", 1)
-        log.info("cycle_step", step=2, description="Strategic forecasting")
-        forecast_result = await agents["demand_forecaster"].run_cycle(context)
-        agent_results["demand_forecaster"] = forecast_result
-        self._ui("on_cycle_step_complete", 1)
+            risk_scores = []
+            for s in suppliers[:10]:
+                metrics = SupplierMetrics(
+                    supplier_id=s.supplier_id,
+                    on_time_rate=s.on_time_rate,
+                    defect_rate=s.defect_rate,
+                    lead_time_mean=s.lead_time_mean,
+                    lead_time_std=s.lead_time_std,
+                )
+                score = _runtime.risk_scorer.score_supplier(metrics)
+                risk_scores.append(score)
 
-        # Step 2: Tactical + Operational — Inventory + Risk
-        self._ui("on_cycle_step_start", 2)
-        log.info("cycle_step", step=3, description="Inventory check + Risk assessment")
-        inv_result = await agents["inventory_optimizer"].run_cycle(context)
-        risk_result = await agents["risk_assessor"].run_cycle(context)
-        agent_results["inventory_optimizer"] = inv_result
-        agent_results["risk_assessor"] = risk_result
-        self._ui("on_cycle_step_complete", 2)
+            high_risk = sum(1 for r in risk_scores if r.risk_level in ("high", "critical"))
+            results["risk"] = {
+                "scored": len(risk_scores),
+                "high_risk_count": high_risk,
+            }
 
-        # Step 3: Tactical — Supplier selection + Procurement
-        self._ui("on_cycle_step_start", 3)
-        log.info("cycle_step", step=4, description="Supplier management")
-        supplier_result = await agents["supplier_manager"].run_cycle(context)
-        agent_results["supplier_manager"] = supplier_result
-        self._ui("on_cycle_step_complete", 3)
+        # Step 3: CP-SAT supplier allocation for low-stock products
+        low_stock = [p for p in products if p.current_stock < p.reorder_point]
+        if low_stock:
+            from .optimization.cpsat_optimizer import SupplierAllocationOptimizer, SupplierCandidate
 
-        # Step 4: Tactical — Logistics coordination
-        self._ui("on_cycle_step_start", 4)
-        log.info("cycle_step", step=5, description="Logistics coordination")
-        logistics_result = await agents["logistics_coordinator"].run_cycle(context)
-        agent_results["logistics_coordinator"] = logistics_result
-        self._ui("on_cycle_step_complete", 4)
+            allocator = SupplierAllocationOptimizer()
+            for product in low_stock[:5]:
+                candidates = []
+                for s in suppliers:
+                    if product.product_id in s.products:
+                        candidates.append(SupplierCandidate(
+                            supplier_id=s.supplier_id,
+                            unit_cost=product.unit_cost * s.cost_multiplier,
+                            risk_score=1.0 - s.reliability_score,
+                            capacity=s.capacity,
+                            min_order_qty=float(product.min_order_qty),
+                            lead_time_days=s.lead_time_mean,
+                        ))
+                if candidates:
+                    alloc = allocator.optimize(candidates, product.daily_demand_avg * 30)
+                    results.setdefault("allocations", []).append({
+                        "product_id": product.product_id,
+                        "status": alloc.solver_status,
+                        "total_cost": alloc.total_cost,
+                    })
 
-        # Step 5: Strategic — Strategic planning
-        self._ui("on_cycle_step_start", 5)
-        log.info("cycle_step", step=6, description="Strategic planning")
-        planner_result = await agents["strategic_planner"].run_cycle(context)
-        agent_results["strategic_planner"] = planner_result
-        self._ui("on_cycle_step_complete", 5)
+        # Step 4: RL inventory decisions
+        if _runtime.rl_policy:
+            rl_decisions = []
+            for p in products[:10]:
+                decision = _runtime.rl_policy.decide(
+                    current_stock=p.current_stock,
+                    avg_demand=p.daily_demand_avg,
+                )
+                rl_decisions.append({
+                    "product_id": p.product_id,
+                    "action": decision.action,
+                    "order_qty": decision.order_quantity,
+                    "method": decision.method,
+                })
+            results["rl_decisions"] = len(rl_decisions)
 
-        # Step 6: Orchestration — Coordinator summarizes + resolves conflicts
-        self._ui("on_cycle_step_start", 6)
-        log.info("cycle_step", step=7, description="Coordinator arbitration")
-        coord_context = {**context, "agent_results": agent_results}
-        coord_result = await agents["coordinator"].run_cycle(coord_context)
-        agent_results["coordinator"] = coord_result
-        self._ui("on_cycle_step_complete", 6)
+        # Step 5: CTB analysis
+        if _runtime.bom_manager and _runtime.ctb_analyzer is None:
+            from .ctb import CTBAnalyzer
+            _runtime.ctb_analyzer = CTBAnalyzer()
 
-        # Step 7: Orchestration — Reporter generates summary
-        self._ui("on_cycle_step_start", 7)
-        log.info("cycle_step", step=8, description="Report generation")
-        report_context = {
-            **context,
-            "agent_results": agent_results,
-            "coordinator_summary": coord_result.get("executive_summary", ""),
-        }
-        report_result = await agents["reporter"].run_cycle(report_context)
-        agent_results["reporter"] = report_result
-        self._ui("on_cycle_step_complete", 7)
+        if _runtime.ctb_analyzer and _runtime.bom_manager:
+            ctb_reports = []
+            for assembly_id, tree in list(_runtime.bom_manager.assemblies.items())[:3]:
+                # Build inventory from current product stock
+                inventory = {p.product_id: p.current_stock for p in products}
+                roots = tree.root_items
+                for root in roots:
+                    report = _runtime.ctb_analyzer.analyze(
+                        tree, root.part_id, settings.ctb_default_build_qty, inventory,
+                    )
+                    ctb_reports.append({
+                        "assembly_id": assembly_id,
+                        "is_clear": report.is_clear,
+                        "clear_pct": report.clear_percentage,
+                        "shortages": len(report.shortages),
+                    })
+            results["ctb"] = ctb_reports
 
-        # Step 9: KPI update (stored in kpi_engine.history automatically)
+        # Step 6: KPI update
         snapshot = _runtime.kpi_engine.calculate_snapshot(
-            products, _runtime.purchase_orders, _runtime.suppliers or [],
+            products, _runtime.purchase_orders, suppliers,
         )
         violations = _runtime.kpi_engine.check_thresholds(snapshot)
         for event in violations:
             if _runtime.event_bus:
                 await _runtime.event_bus.publish(event)
 
-        # Persist cycle data to backend
+        # Persist cycle data
         if _runtime.backend:
             await _runtime.backend.persist_cycle(
                 cycle=self._cycle_count,
@@ -379,7 +318,7 @@ class ChainCommandOrchestrator:
                 events=list(_runtime.event_bus.recent_events[-50:]) if _runtime.event_bus else [],
                 pos=_runtime.purchase_orders,
                 products=products,
-                suppliers=_runtime.suppliers or [],
+                suppliers=suppliers,
             )
 
         # Simulate demand consumption
@@ -387,29 +326,16 @@ class ChainCommandOrchestrator:
             consumed = max(0, random.gauss(p.daily_demand_avg, p.daily_demand_std))
             p.current_stock = max(0, p.current_stock - consumed)
 
-        log.info(
-            "cycle_complete",
-            cycle=self._cycle_count,
-            agents_run=len(agent_results),
-            kpi_violations=len(violations),
-        )
+        results["kpi"] = snapshot.model_dump()
+        results["violations"] = len(violations)
+        _runtime.last_cycle_results = results
 
-        return {
-            "cycle": self._cycle_count,
-            "agent_results": {
-                k: v.get("analysis", "") if isinstance(v, dict) else ""
-                for k, v in agent_results.items()
-            },
-            "kpi": snapshot.model_dump(),
-            "violations": len(violations),
-            "report": report_result.get("report", {}).get("report_id"),
-        }
+        log.info("cycle_complete", cycle=self._cycle_count, violations=len(violations))
+        return results
 
     async def run_loop(self) -> None:
-        """Run continuous simulation cycles."""
+        """Run continuous optimization cycles."""
         self._running = True
-
-        # Start proactive monitor
         if _runtime.monitor:
             await _runtime.monitor.start()
 
@@ -421,11 +347,8 @@ class ChainCommandOrchestrator:
                 await asyncio.sleep(interval)
             except asyncio.CancelledError:
                 break
-            except (RuntimeError, ValueError, KeyError, TypeError) as exc:
-                log.error("cycle_error", error=str(exc), exc_type=type(exc).__name__)
-                await asyncio.sleep(5)
             except Exception as exc:
-                log.error("cycle_unexpected_error", error=str(exc), exc_type=type(exc).__name__)
+                log.error("cycle_error", error=str(exc), exc_type=type(exc).__name__)
                 await asyncio.sleep(5)
 
     async def stop_loop(self) -> None:
@@ -436,7 +359,7 @@ class ChainCommandOrchestrator:
         log.info("simulation_loop_stopped")
 
     async def run_demo(self) -> Dict[str, Any]:
-        """Run a single demo cycle and print results."""
+        """Run a single demo cycle and return results."""
         await self.initialize()
         result = await self.run_cycle()
         await self.shutdown()
@@ -459,19 +382,9 @@ class ChainCommandOrchestrator:
 _orchestrator: Optional[ChainCommandOrchestrator] = None
 
 
-def get_orchestrator(mode: Optional[str] = None) -> Any:
-    """Factory: return classic (default) or langgraph orchestrator.
-
-    Args:
-        mode: "classic" or "langgraph". Defaults to settings.orchestrator_mode.
-    """
+def get_orchestrator() -> ChainCommandOrchestrator:
+    """Get or create the orchestrator singleton."""
     global _orchestrator
-    chosen = mode or settings.orchestrator_mode
-
-    if chosen == "langgraph":
-        from .langgraph_orchestrator import LangGraphOrchestrator
-        return LangGraphOrchestrator()
-
     if _orchestrator is None:
         _orchestrator = ChainCommandOrchestrator()
     return _orchestrator

@@ -34,7 +34,10 @@ class MockRuntime:
     kpi_engine: Any = None
     event_bus: Any = None
     monitor: Any = None
-    agents: Dict[str, Any] = field(default_factory=dict)
+    bom_manager: Any = None
+    rl_policy: Any = None
+    risk_scorer: Any = None
+    ctb_analyzer: Any = None
     purchase_orders: List[PurchaseOrder] = field(default_factory=list)
     pending_approvals: Dict[str, HumanApprovalRequest] = field(default_factory=dict)
     kpi_history: List[KPISnapshot] = field(default_factory=list)
@@ -163,14 +166,6 @@ def event_bus():
 
 
 @pytest.fixture
-def mock_llm():
-    """MockLLM instance for agent testing."""
-    from chaincommand.llm.mock_llm import MockLLM
-
-    return MockLLM()
-
-
-@pytest.fixture
 def app_no_lifespan():
     """Create a FastAPI test app without the real lifespan (no orchestrator init)."""
     from fastapi import FastAPI
@@ -204,14 +199,14 @@ def app_no_lifespan():
     async def root():
         return {
             "name": "ChainCommand",
-            "version": "2.0.0",
+            "version": "3.0.0",
             "status": "running",
             "docs": "/docs",
         }
 
     @app.get("/api/health")
     async def health_check():
-        return {"status": "ok", "name": "ChainCommand", "version": "2.0.0"}
+        return {"status": "ok", "name": "ChainCommand", "version": "3.0.0"}
 
     return app
 

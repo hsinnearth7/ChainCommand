@@ -40,7 +40,7 @@ class TestAuthentication:
             "/api/kpi/current",
             "/api/kpi/history",
             "/api/inventory/status",
-            "/api/agents/status",
+            "/api/bom/summary",
             "/api/events/recent",
             "/api/approvals/pending",
             "/api/aws/status",

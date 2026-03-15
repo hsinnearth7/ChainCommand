@@ -77,3 +77,4 @@ architecture-diagrams/
 docs/
 demo/
 generate_aws_screenshots.py
+k8s/secret.yaml

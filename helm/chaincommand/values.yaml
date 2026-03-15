@@ -51,15 +51,16 @@ redis:
     enabled: false
 
 config:
-  llmMode: mock
   logLevel: INFO
   simulationSpeed: "1.0"
-  orchestratorMode: classic
   rateLimitPerMinute: "60"
+  rlTotalTimesteps: "50000"
+  bomDefaultAssemblies: "5"
+  ctbDefaultBuildQty: "100"
+  ortoolsRiskLambda: "0.3"
 
 secrets:
   apiKey: ""
-  openaiApiKey: ""
 
 probes:
   liveness:

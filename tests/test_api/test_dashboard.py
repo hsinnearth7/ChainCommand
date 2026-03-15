@@ -96,10 +96,10 @@ class TestAWSEndpoints:
             assert resp.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_aws_query_disabled(self, client, auth_headers, mock_runtime):
+    async def test_aws_kpi_trend_disabled(self, client, auth_headers, mock_runtime):
         with patch("chaincommand.orchestrator._runtime", mock_runtime):
             resp = await client.get(
-                "/api/aws/query?event_type=test",
+                "/api/aws/kpi-trend/otif",
                 headers=auth_headers,
             )
             assert resp.status_code == 200

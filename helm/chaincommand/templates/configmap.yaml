@@ -5,8 +5,10 @@ metadata:
   labels:
     {{- include "chaincommand.labels" . | nindent 4 }}
 data:
-  CC_LLM_MODE: {{ .Values.config.llmMode | quote }}
   CC_LOG_LEVEL: {{ .Values.config.logLevel | quote }}
   CC_SIMULATION_SPEED: {{ .Values.config.simulationSpeed | quote }}
-  CC_ORCHESTRATOR_MODE: {{ .Values.config.orchestratorMode | quote }}
   CC_RATE_LIMIT_PER_MINUTE: {{ .Values.config.rateLimitPerMinute | quote }}
+  CC_RL_TOTAL_TIMESTEPS: {{ .Values.config.rlTotalTimesteps | quote }}
+  CC_BOM_DEFAULT_ASSEMBLIES: {{ .Values.config.bomDefaultAssemblies | quote }}
+  CC_CTB_DEFAULT_BUILD_QTY: {{ .Values.config.ctbDefaultBuildQty | quote }}
+  CC_ORTOOLS_RISK_LAMBDA: {{ .Values.config.ortoolsRiskLambda | quote }}

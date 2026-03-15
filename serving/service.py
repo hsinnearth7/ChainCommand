@@ -17,7 +17,6 @@ class ChainCommandService:
     """Unified ML serving endpoint for supply chain models."""
 
     def __init__(self) -> None:
-        # Lazy import to avoid circular deps at module level
         from chaincommand.models.anomaly_detector import AnomalyDetector
         from chaincommand.models.forecaster import EnsembleForecaster
         from chaincommand.models.optimizer import HybridOptimizer
