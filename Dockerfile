@@ -1,5 +1,5 @@
 # ── Stage 1: builder ──────────────────────────────────────────
-FROM python:3.11.9-slim AS builder
+FROM python:3.11-slim AS builder
 
 WORKDIR /build
 
@@ -15,7 +15,11 @@ COPY chaincommand/ chaincommand/
 RUN pip install --no-cache-dir --target=/install ".[all]"
 
 # ── Stage 2: runtime ─────────────────────────────────────────
-FROM python:3.11.9-slim AS runtime
+FROM python:3.11-slim AS runtime
+
+# Upgrade base packages with known CVEs
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/* && \
+    pip install --no-cache-dir --upgrade setuptools wheel
 
 # Create a non-root user
 RUN groupadd --gid 1000 appuser && \
