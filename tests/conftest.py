@@ -195,6 +195,7 @@ def event_bus():
 def app_no_lifespan():
     """Create a FastAPI test app without the real lifespan (no orchestrator init)."""
     from fastapi import FastAPI
+
     from chaincommand.api.app import configure_middlewares
 
     @asynccontextmanager

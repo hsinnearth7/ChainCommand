@@ -55,7 +55,7 @@ class LSTMForecaster:
         trend = state["trend"]
         std = state["std"]
 
-        rng = random.Random(int(hashlib.md5(product_id.encode()).hexdigest(), 16) % (2**32))
+        rng = random.Random(int(hashlib.md5(product_id.encode(), usedforsecurity=False).hexdigest(), 16) % (2**32))  # noqa: S324
         for i in range(horizon):
             predicted = base + trend * i + rng.gauss(0, std * 0.3)
             predicted = max(0, predicted)
@@ -124,7 +124,7 @@ class XGBForecaster:
             return []
 
         results = []
-        rng = random.Random(int(hashlib.md5(product_id.encode()).hexdigest(), 16) % (2**32))
+        rng = random.Random(int(hashlib.md5(product_id.encode(), usedforsecurity=False).hexdigest(), 16) % (2**32))  # noqa: S324
         for i in range(horizon):
             future_date = utc_now() + timedelta(days=i + 1)
             dow = future_date.weekday()
@@ -191,15 +191,22 @@ class EnsembleForecaster:
             xgb_state = self._xgb._trained.get(product_id)
 
             if lstm_state and xgb_state:
-                rng_l = random.Random(int(hashlib.md5(product_id.encode()).hexdigest(), 16) % (2**32))
+                pid_hash = hashlib.md5(product_id.encode(), usedforsecurity=False).hexdigest()  # noqa: S324
+                rng_l = random.Random(int(pid_hash, 16) % (2**32))
                 lstm_holdout = [
                     max(0, lstm_state["mean"] + lstm_state["trend"] * i + rng_l.gauss(0, lstm_state["std"] * 0.3))
                     for i in range(holdout_size)
                 ]
-                rng_x = random.Random(int(hashlib.md5(product_id.encode()).hexdigest(), 16) % (2**32))
+                pid_hash_x = hashlib.md5(product_id.encode(), usedforsecurity=False).hexdigest()  # noqa: S324
+                rng_x = random.Random(int(pid_hash_x, 16) % (2**32))
                 xgb_weekly = xgb_state.get("weekly_pattern", [])
                 xgb_holdout = [
-                    max(0, xgb_state["mean"] + xgb_state["trend"] * i + (xgb_weekly[i % 7] - xgb_state["mean"] if xgb_weekly else 0) + rng_x.gauss(0, xgb_state["std"] * 0.2))
+                    max(
+                        0,
+                        xgb_state["mean"] + xgb_state["trend"] * i
+                        + (xgb_weekly[i % 7] - xgb_state["mean"] if xgb_weekly else 0)
+                        + rng_x.gauss(0, xgb_state["std"] * 0.2),
+                    )
                     for i in range(holdout_size)
                 ]
 

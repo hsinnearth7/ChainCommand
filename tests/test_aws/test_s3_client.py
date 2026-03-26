@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import timezone  # noqa: F401
 from unittest.mock import MagicMock, patch
 
 import pandas as pd

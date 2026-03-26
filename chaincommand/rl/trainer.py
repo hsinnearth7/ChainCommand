@@ -284,9 +284,9 @@ class RLInventoryTrainer:
 
                 # Q-update with 2D state — use OLD demand trend for LHS
                 next_state = min(np.digitize(stock, stock_bins), n_stock_levels - 1)
-                q_table[state, old_demand_trend, action] += lr * (
-                    reward + gamma * np.max(q_table[next_state, demand_trend]) - q_table[state, old_demand_trend, action]
-                )
+                td_target = reward + gamma * np.max(q_table[next_state, demand_trend])
+                td_error = td_target - q_table[state, old_demand_trend, action]
+                q_table[state, old_demand_trend, action] += lr * td_error
 
                 total_reward += reward
 

@@ -8,7 +8,6 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import FastAPI, WebSocketException
 
-
 # ── Authentication Tests ────────────────────────────────────
 
 

@@ -255,7 +255,7 @@ class SupplierAllocationOptimizer:
         # 3. Pick the point where both signals agree the trade-off is sharpest
         elbow_idx = 0
         if len(lambdas) >= 3:
-            composite = [c + r for c, r in zip(costs, risks)]
+            composite = [c + r for c, r in zip(costs, risks, strict=False)]
 
             # ── Second-derivative analysis (normalized) ───────────
             second_derivs = []
@@ -280,7 +280,7 @@ class SupplierAllocationOptimizer:
             pc_norm = [v / pc_max if pc_max > 0 else 0.0 for v in pct_changes]
 
             # ── Combined score (equal weight) ─────────────────────
-            combined = [0.5 * s + 0.5 * p for s, p in zip(sd_norm, pc_norm)]
+            combined = [0.5 * s + 0.5 * p for s, p in zip(sd_norm, pc_norm, strict=False)]
             if combined:
                 elbow_idx = combined.index(max(combined)) + 1
 

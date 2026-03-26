@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -267,7 +266,7 @@ class KPIEngine:
                 if v is not None and not (isinstance(v, float) and math.isnan(v))
             ]
             if len(clean) >= 3:
-                indices, clean_vals = zip(*clean)
+                indices, clean_vals = zip(*clean, strict=False)
                 slope = np.polyfit(indices, clean_vals, 1)[0]
             else:
                 slope = 0.0

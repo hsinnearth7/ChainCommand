@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 
 from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings

@@ -150,7 +150,7 @@ class RedshiftClient:
                 log.warning("redshift_connection_stale, reconnecting")
                 try:
                     self._conn.close()
-                except Exception:
+                except Exception:  # noqa: S110
                     pass
                 self._conn = None
 

@@ -10,10 +10,10 @@ from .utils.logging_config import get_logger
 logger = get_logger(__name__)
 
 try:
+    import mlflow.pyfunc  # noqa: I001
     from mlflow.tracking import MlflowClient
 
     import mlflow
-    import mlflow.pyfunc
 
     HAS_MLFLOW = True
 except ImportError:

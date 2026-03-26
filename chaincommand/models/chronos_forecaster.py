@@ -6,7 +6,7 @@ and settings.enable_chronos is True.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any, Dict, List
 
 import numpy as np

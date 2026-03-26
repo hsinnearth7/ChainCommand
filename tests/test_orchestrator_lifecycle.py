@@ -50,7 +50,10 @@ class TestOrchestratorInitializeShutdown:
         mock_monitor.start = AsyncMock()
         mock_monitor.stop = AsyncMock()
 
-        with patch("chaincommand.data.generator.generate_all", return_value=(sample_products, sample_suppliers, sample_demand_df)), \
+        with patch(
+            "chaincommand.data.generator.generate_all",
+            return_value=(sample_products, sample_suppliers, sample_demand_df),
+        ), \
              patch("chaincommand.models.forecaster.EnsembleForecaster", return_value=mock_forecaster), \
              patch("chaincommand.models.anomaly_detector.AnomalyDetector", return_value=mock_anomaly), \
              patch("chaincommand.models.optimizer.HybridOptimizer", return_value=MagicMock()), \

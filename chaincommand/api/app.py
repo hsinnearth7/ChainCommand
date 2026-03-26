@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from collections import OrderedDict, defaultdict, deque
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import AsyncGenerator
