@@ -16,7 +16,7 @@
 <img src="https://img.shields.io/badge/ML-LSTM%20%2B%20XGBoost%20%2B%20RandomForest-green?style=for-the-badge" />
 <img src="https://img.shields.io/badge/BOM-Multi--Tier%20Explosion-orange?style=for-the-badge" />
 <img src="https://img.shields.io/badge/AWS-S3%20%7C%20Redshift%20%7C%20Athena%20%7C%20QuickSight-FF9900?style=for-the-badge" />
-<img src="https://img.shields.io/badge/Tests-163%20Passed-brightgreen?style=for-the-badge" />
+<img src="https://img.shields.io/badge/Tests-181%20Passed-brightgreen?style=for-the-badge" />
 
 </div>
 
@@ -77,7 +77,7 @@ The system runs from a single command (`python -m chaincommand --demo`) with zer
 - **HITL Approval Gates** — Orders ≥$50K require human approval; $10K–$50K pending review; <$10K auto-approved
 - **REST API + WebSocket** — FastAPI dashboard with live event streaming and simulation control
 - **AWS Persistence (Optional)** — Strategy Pattern backend with S3, Redshift, Athena, and QuickSight integration
-- **163 Tests** — Unit, property-based (Hypothesis), and API tests across 12 test modules
+- **181 Tests** — Unit, property-based (Hypothesis), and API tests across 15 test modules
 - **Docker Deployment** — Dockerfile + docker-compose.yml for containerized deployment
 
 ---
@@ -209,18 +209,21 @@ chaincommand/
 └── utils/
     └── logging_config.py               # structlog configuration
 
-tests/                                   # 163 tests across 12 modules
+tests/                                   # 181 tests across 15 modules
 ├── conftest.py                          # Shared fixtures
-├── test_models/                         # ML model tests (18 tests)
+├── test_models/                         # ML model tests (23 tests)
 ├── test_kpi/                            # KPI engine tests (8 tests)
 ├── test_optimization/                   # CP-SAT optimizer tests (10 tests)
 ├── test_bom/                            # BOM tree + manager tests (17 tests)
-├── test_rl/                             # RL inventory tests (11 tests)
+├── test_rl/                             # RL inventory tests (12 tests)
 ├── test_ctb/                            # CTB analyzer tests (8 tests)
 ├── test_risk/                           # Risk scorer tests (11 tests)
-├── test_property_based.py               # Hypothesis property tests (5 tests)
-├── test_api/                            # API endpoint + security tests
-└── test_aws/                            # AWS backend tests (47 tests, all mocked)
+├── test_property_based.py               # Hypothesis property tests (4 tests)
+├── test_api/                            # API endpoint + security tests (28 tests)
+├── test_aws/                            # AWS backend tests (52 tests, all mocked)
+├── test_events/                         # Event bus tests (2 tests)
+├── test_orchestrator_lifecycle.py       # Orchestrator lifecycle tests (3 tests)
+└── test_mlflow_registry.py             # MLflow registry tests (3 tests)
 ```
 
 ---
@@ -522,35 +525,41 @@ CC_AWS_QUICKSIGHT_ACCOUNT_ID=123456789012
 ## Testing
 
 ```bash
-# Run all tests (163)
+# Run all tests (181)
 pytest tests/ -v
 
 # Run by module
-pytest tests/test_models/          # ML model tests (18 tests)
+pytest tests/test_models/          # ML model tests (23 tests)
 pytest tests/test_kpi/             # KPI engine tests (8 tests)
 pytest tests/test_optimization/    # CP-SAT optimizer tests (10 tests)
 pytest tests/test_bom/             # BOM tree + manager tests (17 tests)
-pytest tests/test_rl/              # RL inventory tests (11 tests)
+pytest tests/test_rl/              # RL inventory tests (12 tests)
 pytest tests/test_ctb/             # CTB analyzer tests (8 tests)
 pytest tests/test_risk/            # Risk scorer tests (11 tests)
-pytest tests/test_property_based.py  # Hypothesis property tests (5 tests)
-pytest tests/test_api/ -v          # API + security tests
-pytest tests/test_aws/ -v          # AWS backend tests (47 tests)
+pytest tests/test_property_based.py  # Hypothesis property tests (4 tests)
+pytest tests/test_api/ -v          # API + security tests (28 tests)
+pytest tests/test_aws/ -v          # AWS backend tests (52 tests)
+pytest tests/test_events/ -v       # Event bus tests (2 tests)
+pytest tests/test_orchestrator_lifecycle.py  # Orchestrator tests (3 tests)
+pytest tests/test_mlflow_registry.py         # MLflow registry tests (3 tests)
 ```
 
 | Test Module | Tests | Coverage |
 |-------------|-------|----------|
-| `test_models/` | 18 | LSTM, XGBoost, Ensemble, AnomalyDetector, GA, DQN, Hybrid |
+| `test_models/` | 23 | LSTM, XGBoost, Ensemble, AnomalyDetector, GA, DQN, Hybrid |
 | `test_kpi/` | 8 | KPI calculations, thresholds, violations |
 | `test_optimization/` | 10 | CP-SAT allocation, constraints, sensitivity analysis |
 | `test_bom/` | 17 | BOM tree operations, explosion, where-used, cost rollup, critical path |
-| `test_rl/` | 11 | Gymnasium env, (s,S) baseline, Q-table trainer, PPO fallback policy |
+| `test_rl/` | 12 | Gymnasium env, (s,S) baseline, Q-table trainer, PPO fallback policy |
 | `test_ctb/` | 8 | Full availability, shortages, on-order, material costs |
 | `test_risk/` | 11 | Rule-based scoring, ML training, recommendations, ranking |
-| `test_property_based.py` | 5 | Hypothesis: KPI ranges, optimizer constraints, risk scores, BOM generation |
-| `test_api/` | 16 | Dashboard, control, security, CORS, rate limiting |
-| `test_aws/` | 47 | All AWS clients fully mocked |
-| **Total** | **163** | Full coverage across all modules |
+| `test_property_based.py` | 4 | Hypothesis: KPI ranges, optimizer constraints, risk scores, BOM generation |
+| `test_api/` | 28 | Dashboard, control, security, CORS, rate limiting |
+| `test_aws/` | 52 | All AWS clients fully mocked |
+| `test_events/` | 2 | Event bus pub/sub |
+| `test_orchestrator_lifecycle.py` | 3 | Orchestrator lifecycle management |
+| `test_mlflow_registry.py` | 3 | MLflow model registry |
+| **Total** | **181** | Full coverage across all modules |
 
 All tests use mocked dependencies — no real AWS credentials, GPU, or external services required.
 

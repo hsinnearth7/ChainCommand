@@ -41,6 +41,7 @@ class MockRuntime:
     purchase_orders: List[PurchaseOrder] = field(default_factory=list)
     pending_approvals: Dict[str, HumanApprovalRequest] = field(default_factory=dict)
     kpi_history: List[KPISnapshot] = field(default_factory=list)
+    runtime_config: Dict[str, Any] = field(default_factory=lambda: {"simulation_speed": 1.0})
     backend: Any = None
 
 
@@ -78,6 +79,25 @@ def mock_runtime():
 @pytest.fixture
 def sample_products():
     """Multiple test products across categories."""
+    return _make_sample_products()
+
+
+@pytest.fixture
+def sample_suppliers():
+    """Multiple test suppliers."""
+    return _make_sample_suppliers()
+
+
+@pytest.fixture
+def sample_demand_df(sample_products):
+    """365-day demand history DataFrame."""
+    return _make_sample_demand_df(sample_products)
+
+
+# ── Session-scoped variants (for expensive fixtures like trained_forecaster) ──
+
+
+def _make_sample_products():
     return [
         Product(
             product_id=f"PRD-{i:04d}",
@@ -97,9 +117,7 @@ def sample_products():
     ]
 
 
-@pytest.fixture
-def sample_suppliers():
-    """Multiple test suppliers."""
+def _make_sample_suppliers():
     return [
         Supplier(
             supplier_id=f"SUP-{i:04d}",
@@ -115,13 +133,11 @@ def sample_suppliers():
     ]
 
 
-@pytest.fixture
-def sample_demand_df(sample_products):
-    """365-day demand history DataFrame."""
+def _make_sample_demand_df(products):
     records = []
     rng = np.random.RandomState(42)
     base_date = datetime(2024, 1, 1)
-    for product in sample_products:
+    for product in products:
         for day in range(365):
             dt = base_date + timedelta(days=day)
             qty = max(0, rng.normal(product.daily_demand_avg, product.daily_demand_std))
@@ -138,14 +154,24 @@ def sample_demand_df(sample_products):
     return pd.DataFrame(records)
 
 
-@pytest.fixture
-def trained_forecaster(sample_demand_df, sample_products):
-    """Pre-trained EnsembleForecaster."""
+@pytest.fixture(scope="session")
+def _session_products():
+    return _make_sample_products()
+
+
+@pytest.fixture(scope="session")
+def _session_demand_df(_session_products):
+    return _make_sample_demand_df(_session_products)
+
+
+@pytest.fixture(scope="session")
+def trained_forecaster(_session_demand_df, _session_products):
+    """Pre-trained EnsembleForecaster (session-scoped to avoid retraining per test)."""
     from chaincommand.models.forecaster import EnsembleForecaster
 
     forecaster = EnsembleForecaster()
-    pids = [p.product_id for p in sample_products[:3]]
-    forecaster.train_all(sample_demand_df, pids)
+    pids = [p.product_id for p in _session_products[:3]]
+    forecaster.train_all(_session_demand_df, pids)
     return forecaster
 
 
@@ -169,24 +195,14 @@ def event_bus():
 def app_no_lifespan():
     """Create a FastAPI test app without the real lifespan (no orchestrator init)."""
     from fastapi import FastAPI
-    from fastapi.middleware.cors import CORSMiddleware
-
-    from chaincommand.config import settings
+    from chaincommand.api.app import configure_middlewares
 
     @asynccontextmanager
     async def noop_lifespan(app):
         yield
 
     app = FastAPI(lifespan=noop_lifespan)
-
-    # Mirror CORS config
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=[o.strip() for o in settings.cors_origins.split(",")],
-        allow_credentials=True,
-        allow_methods=["GET", "POST"],
-        allow_headers=["X-API-Key", "Content-Type"],
-    )
+    configure_middlewares(app)
 
     # Import and include routers
     from chaincommand.api.routes.control import router as control_router

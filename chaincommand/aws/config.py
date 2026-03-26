@@ -16,7 +16,7 @@ def get_aws_config() -> dict:
         "redshift_port": settings.aws_redshift_port,
         "redshift_db": settings.aws_redshift_db,
         "redshift_user": settings.aws_redshift_user,
-        "redshift_password": settings.aws_redshift_password,
+        "redshift_password_set": bool(settings.aws_redshift_password.get_secret_value()),
         "redshift_iam_role": settings.aws_redshift_iam_role,
         "athena_database": settings.aws_athena_database,
         "athena_output": settings.aws_athena_output,

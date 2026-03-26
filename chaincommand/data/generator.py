@@ -10,8 +10,8 @@ Incorporates ChainInsight-discovered patterns:
 from __future__ import annotations
 
 import random
-from datetime import datetime, timedelta
-from typing import List, Tuple
+from datetime import UTC, datetime, timedelta
+from typing import List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -98,9 +98,13 @@ _SUPPLIER_NAMES = [
 ]
 
 
-def generate_products(n: int = None) -> List[Product]:
+def generate_products(
+    n: int | None = None,
+    rng: Optional[random.Random] = None,
+) -> List[Product]:
     """Generate a list of synthetic products."""
     n = n or settings.num_products
+    rng = rng or random.Random()
     products = []
     categories = list(ProductCategory)
 
@@ -115,12 +119,12 @@ def generate_products(n: int = None) -> List[Product]:
         if variant > 0:
             name = f"{name} v{variant + 1}"
 
-        lead_time = random.randint(3, 21)
-        daily_demand_avg = random.uniform(10, 200)
-        daily_demand_std = daily_demand_avg * random.uniform(0.15, 0.45)
+        lead_time = rng.randint(3, 21)
+        daily_demand_avg = rng.uniform(10, 200)
+        daily_demand_std = daily_demand_avg * rng.uniform(0.15, 0.45)
 
         # ChainInsight: 2.2x overstock pattern — some products over-stocked
-        overstock_factor = 2.2 if random.random() < 0.3 else 1.0
+        overstock_factor = 2.2 if rng.random() < 0.3 else 1.0
         safety_stock = daily_demand_std * np.sqrt(lead_time) * 1.65
         reorder_point = daily_demand_avg * lead_time + safety_stock
 
@@ -128,10 +132,10 @@ def generate_products(n: int = None) -> List[Product]:
             product_id=f"PRD-{i + 1:04d}",
             name=name,
             category=cat,
-            unit_cost=unit_cost * random.uniform(0.9, 1.1),
-            selling_price=selling_price * random.uniform(0.95, 1.05),
+            unit_cost=unit_cost * rng.uniform(0.9, 1.1),
+            selling_price=selling_price * rng.uniform(0.95, 1.05),
             lead_time_days=lead_time,
-            min_order_qty=random.choice([50, 100, 200, 500]),
+            min_order_qty=rng.choice([50, 100, 200, 500]),
             current_stock=daily_demand_avg * lead_time * overstock_factor,
             reorder_point=reorder_point,
             safety_stock=safety_stock,
@@ -142,9 +146,13 @@ def generate_products(n: int = None) -> List[Product]:
     return products
 
 
-def generate_suppliers(n: int = None) -> List[Supplier]:
+def generate_suppliers(
+    n: int | None = None,
+    rng: Optional[random.Random] = None,
+) -> List[Supplier]:
     """Generate a list of synthetic suppliers."""
     n = n or settings.num_suppliers
+    rng = rng or random.Random()
     suppliers = []
 
     for i in range(n):
@@ -153,29 +161,32 @@ def generate_suppliers(n: int = None) -> List[Supplier]:
         if variant > 0:
             name = f"{name} #{variant + 1}"
 
-        reliability = np.clip(random.gauss(0.85, 0.1), 0.5, 0.99)
+        reliability = np.clip(rng.gauss(0.85, 0.1), 0.5, 0.99)
         suppliers.append(Supplier(
             supplier_id=f"SUP-{i + 1:04d}",
             name=name,
             reliability_score=round(reliability, 3),
-            lead_time_mean=random.uniform(3, 14),
-            lead_time_std=random.uniform(0.5, 4),
-            cost_multiplier=random.uniform(0.85, 1.25),
-            capacity=random.uniform(5000, 50000),
-            defect_rate=round(np.clip(random.gauss(0.02, 0.01), 0.001, 0.1), 4),
-            on_time_rate=round(np.clip(random.gauss(0.9, 0.08), 0.6, 0.99), 3),
+            lead_time_mean=rng.uniform(3, 14),
+            lead_time_std=rng.uniform(0.5, 4),
+            cost_multiplier=rng.uniform(0.85, 1.25),
+            capacity=rng.uniform(5000, 50000),
+            defect_rate=round(np.clip(rng.gauss(0.02, 0.01), 0.001, 0.1), 4),
+            on_time_rate=round(np.clip(rng.gauss(0.9, 0.08), 0.6, 0.99), 3),
         ))
 
     return suppliers
 
 
 def assign_suppliers(
-    products: List[Product], suppliers: List[Supplier]
+    products: List[Product],
+    suppliers: List[Supplier],
+    rng: Optional[random.Random] = None,
 ) -> List[Supplier]:
     """Assign each product to 1-3 suppliers."""
+    rng = rng or random.Random()
     for product in products:
-        n_suppliers = random.randint(1, min(3, len(suppliers)))
-        chosen = random.sample(suppliers, n_suppliers)
+        n_suppliers = rng.randint(1, min(3, len(suppliers)))
+        chosen = rng.sample(suppliers, n_suppliers)
         for s in chosen:
             if product.product_id not in s.products:
                 s.products.append(product.product_id)
@@ -184,7 +195,8 @@ def assign_suppliers(
 
 def generate_demand_history(
     products: List[Product],
-    days: int = None,
+    days: int | None = None,
+    rng: Optional[random.Random] = None,
 ) -> pd.DataFrame:
     """Generate daily demand history with realistic patterns.
 
@@ -197,7 +209,8 @@ def generate_demand_history(
     - Noise
     """
     days = days or settings.history_days
-    end_date = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    rng = rng or random.Random()
+    end_date = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     start_date = end_date - timedelta(days=days)
     dates = pd.date_range(start_date, end_date, freq="D")
 
@@ -205,7 +218,7 @@ def generate_demand_history(
     for product in products:
         avg = product.daily_demand_avg
         std = product.daily_demand_std
-        trend_slope = random.uniform(-0.05, 0.15)  # slight upward trend usually
+        trend_slope = rng.uniform(-0.05, 0.15)  # slight upward trend usually
 
         for i, date in enumerate(dates):
             # Weekly pattern (weekend dip)
@@ -227,15 +240,26 @@ def generate_demand_history(
             trend = 1.0 + trend_slope * (i / days)
 
             # Promotion spike
-            is_promo = random.random() < 0.05
-            promo_factor = random.uniform(1.5, 3.0) if is_promo else 1.0
+            is_promo = rng.random() < 0.05
+            promo_factor = rng.uniform(1.5, 3.0) if is_promo else 1.0
 
-            # Holiday
+            # Holiday — demand varies by category
             is_holiday = date.month == 12 and date.day in range(20, 32)
+            if is_holiday:
+                if product.category in (ProductCategory.ELECTRONICS, ProductCategory.APPAREL):
+                    holiday_factor = rng.uniform(1.3, 1.5)  # gift-oriented categories surge
+                elif product.category == ProductCategory.FOOD:
+                    holiday_factor = rng.uniform(1.2, 1.4)  # holiday meals & treats
+                elif product.category == ProductCategory.INDUSTRIAL:
+                    holiday_factor = rng.uniform(0.6, 0.8)  # factories slow down
+                else:
+                    holiday_factor = rng.uniform(1.1, 1.3)  # mild holiday uplift
+            else:
+                holiday_factor = 1.0
 
             # Combine
-            base = avg * weekly_factor * monthly_factor * annual_factor * trend * promo_factor
-            noise = random.gauss(0, std)
+            base = avg * weekly_factor * monthly_factor * annual_factor * trend * promo_factor * holiday_factor
+            noise = rng.gauss(0, std)
             quantity = max(0, base + noise)
 
             records.append({
@@ -252,10 +276,12 @@ def generate_demand_history(
     return pd.DataFrame(records)
 
 
-def generate_all() -> Tuple[List[Product], List[Supplier], pd.DataFrame]:
+def generate_all(
+    rng: Optional[random.Random] = None,
+) -> Tuple[List[Product], List[Supplier], pd.DataFrame]:
     """Generate complete synthetic dataset."""
-    products = generate_products()
-    suppliers = generate_suppliers()
-    suppliers = assign_suppliers(products, suppliers)
-    demand_df = generate_demand_history(products)
+    products = generate_products(rng=rng)
+    suppliers = generate_suppliers(rng=rng)
+    suppliers = assign_suppliers(products, suppliers, rng=rng)
+    demand_df = generate_demand_history(products, rng=rng)
     return products, suppliers, demand_df

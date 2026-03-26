@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pandas as pd
 import pytest
@@ -87,6 +87,12 @@ class TestAWSBackend:
              patch("chaincommand.aws.aws_backend.QuickSightClient") as MockQS:
             from chaincommand.aws.aws_backend import AWSBackend
 
+            # Athena methods are now async — use AsyncMock
+            athena_instance = MockAthena.return_value
+            athena_instance.create_database = AsyncMock()
+            athena_instance.create_external_tables = AsyncMock()
+            athena_instance.run_query = AsyncMock(return_value=[])
+
             backend = AWSBackend()
             # Store mocked classes for assertions
             backend._mock_s3_cls = MockS3
@@ -141,9 +147,9 @@ class TestAWSBackend:
             suppliers=[],
         )
 
-        # S3: should upload KPI JSON, events JSONL, POs JSONL
-        assert aws_backend._s3.upload_json.call_count == 1
-        assert aws_backend._s3.upload_jsonl.call_count == 2
+        # S3: should upload KPI JSONL, events JSONL, POs JSONL
+        assert aws_backend._s3.upload_json.call_count == 0
+        assert aws_backend._s3.upload_jsonl.call_count == 3
 
         # Redshift: should insert KPI snapshot
         aws_backend._redshift.insert_kpi_snapshot.assert_called_once_with(1, snapshot)
@@ -157,9 +163,9 @@ class TestAWSBackend:
             cycle=1, kpi=snapshot, events=[], pos=[], products=[], suppliers=[]
         )
 
-        # Only KPI JSON uploaded, no JSONL
-        assert aws_backend._s3.upload_json.call_count == 1
-        assert aws_backend._s3.upload_jsonl.call_count == 0
+        # Only KPI JSONL uploaded, no other JSONL batches
+        assert aws_backend._s3.upload_json.call_count == 0
+        assert aws_backend._s3.upload_jsonl.call_count == 1
 
     @pytest.mark.asyncio
     async def test_persist_demand_history(self, aws_backend):

@@ -5,11 +5,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ...auth import require_api_key
 from ...config import settings
 from ...data.schemas import ApprovalStatus
+from ...kpi.engine import ALLOWED_KPI_METRICS
 from ...utils.logging_config import get_logger
 
 log = get_logger(__name__)
@@ -24,7 +25,7 @@ async def get_current_kpi():
     from ...orchestrator import _runtime
 
     if not _runtime.kpi_engine or not _runtime.kpi_engine.history:
-        return {"error": "No KPI data available yet"}
+        raise HTTPException(status_code=503, detail="No KPI data available yet")
     snapshot = _runtime.kpi_engine.history[-1]
     return snapshot.model_dump()
 
@@ -53,10 +54,12 @@ async def get_inventory_status(product_id: Optional[str] = None):
     products = _runtime.products or []
     if product_id:
         products = [p for p in products if p.product_id == product_id]
+        if not products:
+            raise HTTPException(status_code=404, detail=f"Product '{product_id}' not found")
 
     items = []
     for p in products:
-        dsi = p.current_stock / p.daily_demand_avg if p.daily_demand_avg > 0 else 999
+        dsi = p.current_stock / p.daily_demand_avg if p.daily_demand_avg > 0 else None
         items.append({
             "product_id": p.product_id,
             "name": p.name,
@@ -65,7 +68,7 @@ async def get_inventory_status(product_id: Optional[str] = None):
             "reorder_point": p.reorder_point,
             "safety_stock": p.safety_stock,
             "daily_demand_avg": p.daily_demand_avg,
-            "days_of_supply": round(dsi, 1),
+            "days_of_supply": round(dsi, 1) if dsi is not None else None,
             "unit_cost": p.unit_cost,
             "status": (
                 "critical" if p.current_stock < p.safety_stock
@@ -85,7 +88,7 @@ async def get_bom_summary():
     from ...orchestrator import _runtime
 
     if not _runtime.bom_manager:
-        return {"error": "BOM manager not initialized"}
+        raise HTTPException(status_code=503, detail="BOM manager not initialized")
     return _runtime.bom_manager.get_summary()
 
 
@@ -95,7 +98,7 @@ async def get_bom_risks():
     from ...orchestrator import _runtime
 
     if not _runtime.bom_manager:
-        return {"error": "BOM manager not initialized"}
+        raise HTTPException(status_code=503, detail="BOM manager not initialized")
     return {
         "single_source": _runtime.bom_manager.find_single_source_risks(),
         "long_lead": _runtime.bom_manager.find_long_lead_items(settings.bom_long_lead_threshold_days),
@@ -172,14 +175,20 @@ async def get_forecast(product_id: str, horizon: int = Query(default=30, ge=1, l
     from ...orchestrator import _runtime
 
     if not _runtime.forecaster:
-        return {"error": "Forecaster not initialized"}
+        raise HTTPException(status_code=503, detail="Forecaster not initialized")
 
-    results = _runtime.forecaster.predict(product_id, horizon)
+    import asyncio
+    results = await asyncio.to_thread(_runtime.forecaster.predict, product_id, horizon)
+    accuracy = (
+        _runtime.forecaster.get_accuracy(product_id)
+        if hasattr(_runtime.forecaster, "get_accuracy")
+        else {}
+    )
     return {
         "product_id": product_id,
         "horizon": horizon,
         "forecasts": [r.model_dump() for r in results],
-        "accuracy": _runtime.forecaster.get_accuracy(product_id),
+        "accuracy": accuracy,
     }
 
 
@@ -200,12 +209,16 @@ async def get_pending_approvals():
 
 @router.post("/approval/{request_id}/decide")
 async def decide_approval(request_id: str, approved: bool, reason: str = ""):
-    """Human decision on an approval request."""
+    """Human decision on an approval request.
+
+    TODO: Production deployments must add RBAC — only authorized roles
+    (e.g., supply-chain-manager) should be allowed to approve/reject.
+    """
     from ...orchestrator import _runtime
 
     approval = _runtime.pending_approvals.get(request_id)
     if not approval:
-        return {"error": f"Approval request {request_id} not found"}
+        raise HTTPException(status_code=404, detail=f"Approval request {request_id} not found")
 
     approval.status = ApprovalStatus.APPROVED if approved else ApprovalStatus.REJECTED
     approval.decided_at = datetime.now(timezone.utc)
@@ -220,7 +233,11 @@ async def decide_approval(request_id: str, approved: bool, reason: str = ""):
 
 @router.get("/aws/status")
 async def get_aws_status():
-    """Return AWS connection status and configuration."""
+    """Return AWS connection status and configuration.
+
+    TODO: This endpoint exposes internal config (region, bucket name).
+    In production, restrict to admin roles or redact sensitive fields.
+    """
     from ...orchestrator import _runtime
 
     backend_type = type(_runtime.backend).__name__ if _runtime.backend else "None"
@@ -238,9 +255,16 @@ async def get_aws_kpi_trend(
     days: int = Query(default=30, ge=1, le=365),
 ):
     """Query KPI trend from Redshift via the persistence backend."""
+    # Allowlist validation to prevent SQL injection via metric path param
+    if metric not in ALLOWED_KPI_METRICS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid metric '{metric}'. Allowed: {sorted(ALLOWED_KPI_METRICS)}",
+        )
+
     from ...orchestrator import _runtime
 
     if not _runtime.backend or not settings.aws_enabled:
-        return {"error": "AWS backend not enabled", "data": []}
+        raise HTTPException(status_code=503, detail="AWS backend not enabled")
     data = await _runtime.backend.query_kpi_trend(metric, days)
     return {"metric": metric, "days": days, "data": data}

@@ -1,3 +1,6 @@
+# Production TODO: Add PodDisruptionBudget (minAvailable: 1) and
+# podAntiAffinity (preferredDuringSchedulingIgnoredDuringExecution) to
+# ensure high availability across nodes and controlled rolling updates.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -5,7 +8,7 @@ metadata:
   namespace: chaincommand
   labels:
     app.kubernetes.io/name: chaincommand
-    app.kubernetes.io/version: "2.0.0"
+    app.kubernetes.io/version: "3.0.0"
 spec:
   replicas: 2
   selector:
@@ -15,16 +18,25 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: chaincommand
-        app.kubernetes.io/version: "2.0.0"
+        app.kubernetes.io/version: "3.0.0"
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
       containers:
         - name: chaincommand
-          image: chaincommand:latest
-          imagePullPolicy: IfNotPresent
+          image: chaincommand:3.0.0
+          imagePullPolicy: Always
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
           ports:
             - name: http
               containerPort: 8000
               protocol: TCP
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           envFrom:
             - configMapRef:
                 name: chaincommand-config
@@ -53,4 +65,7 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 3
+      volumes:
+        - name: tmp
+          emptyDir: {}
       restartPolicy: Always

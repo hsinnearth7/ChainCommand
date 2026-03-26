@@ -2,18 +2,11 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
+from unittest.mock import MagicMock
+
 import pytest
-
-
-@pytest.fixture
-def api_key():
-    from chaincommand.config import settings
-    return settings.api_key
-
-
-@pytest.fixture
-def auth_headers(api_key):
-    return {"X-API-Key": api_key}
+from fastapi import FastAPI, WebSocketException
 
 
 # ── Authentication Tests ────────────────────────────────────
@@ -73,6 +66,19 @@ class TestAuthentication:
         resp = await client.get("/api/kpi/current", headers={"X-API-Key": "wrong-key"})
         assert resp.status_code == 401
 
+    @pytest.mark.asyncio
+    async def test_wrong_ws_api_key_rejected(self):
+        from chaincommand.auth import check_ws_query_key
+
+        websocket = MagicMock()
+        websocket.query_params = {"api_key": "wrong-key"}
+
+        with pytest.raises(WebSocketException) as exc:
+            await check_ws_query_key(websocket)
+
+        assert exc.value.code == 1008
+        assert exc.value.reason == "Invalid API key"
+
 
 # ── CORS Tests ──────────────────────────────────────────────
 
@@ -115,3 +121,29 @@ class TestRateLimiting:
         for _ in range(5):
             resp = await client.get("/")
             assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_returns_429_when_threshold_exceeded(self):
+        import importlib
+
+        from httpx import ASGITransport, AsyncClient
+
+        from chaincommand.api.app import configure_middlewares
+
+        app_module = importlib.import_module("chaincommand.api.app")
+
+        app = FastAPI()
+        configure_middlewares(app)
+
+        @app.get("/")
+        async def root():
+            return {"ok": True}
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            with pytest.MonkeyPatch.context() as mp:
+                mp.setattr(app_module, "_rate_limit_store", defaultdict(list))
+                mp.setattr(app_module.settings, "rate_limit_per_minute", 2)
+                assert (await client.get("/")).status_code == 200
+                assert (await client.get("/")).status_code == 200
+                assert (await client.get("/")).status_code == 429

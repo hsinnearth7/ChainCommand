@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from airflow import DAG
+from airflow.models import Variable
 from airflow.operators.bash import BashOperator
 from airflow.operators.python import BranchPythonOperator
 from airflow.utils.trigger_rule import TriggerRule
@@ -50,28 +51,49 @@ with DAG(
         "print(f'Registered models: {len(models)}')\"",
     )
 
+    # PSI threshold configurable via Airflow Variable 'cc_drift_psi_threshold' (default 0.1)
     detect_data_drift = BashOperator(
         task_id="detect_data_drift",
         bash_command="python -c \""
         "import json; "
+        "from airflow.models import Variable; "
         "from chaincommand.models.anomaly_detector import AnomalyDetector; "
         "ad = AnomalyDetector(); "
-        "print(json.dumps({'drift_detected': False, 'psi_score': 0.05}))\"",
+        "result = ad.detect_drift() if hasattr(ad, 'detect_drift') else {'drift_detected': False, 'psi_score': 0.0}; "
+        "psi_threshold = float(Variable.get('cc_drift_psi_threshold', default_var='0.1')); "
+        "result['drift_detected'] = result.get('psi_score', 0) > psi_threshold; "
+        "print(json.dumps(result))\"",
     )
 
+    # Thresholds configurable via Airflow Variables:
+    #   cc_mape_threshold (default 0.20), cc_rmse_threshold (default 100.0)
     evaluate_forecast_accuracy = BashOperator(
         task_id="evaluate_forecast_accuracy",
         bash_command="python -c \""
         "import json; "
-        "metrics = {'mape': 0.12, 'rmse': 45.3, 'bias': -2.1}; "
+        "from airflow.models import Variable; "
+        "from chaincommand.models.forecaster import EnsembleForecaster; "
+        "f = EnsembleForecaster(); "
+        "metrics = f.evaluate() if hasattr(f, 'evaluate') else {'mape': None, 'rmse': None, 'bias': None}; "
+        "thresholds = {'mape_threshold': float(Variable.get('cc_mape_threshold', default_var='0.20')), "
+        "'rmse_threshold': float(Variable.get('cc_rmse_threshold', default_var='100.0'))}; "
+        "metrics['thresholds'] = thresholds; "
         "print(json.dumps(metrics))\"",
     )
 
+    # Thresholds configurable via Airflow Variables:
+    #   cc_anomaly_precision_threshold (default 0.80), cc_anomaly_recall_threshold (default 0.70)
     evaluate_anomaly_precision = BashOperator(
         task_id="evaluate_anomaly_precision",
         bash_command="python -c \""
         "import json; "
-        "metrics = {'precision': 0.91, 'recall': 0.87, 'f1': 0.89}; "
+        "from airflow.models import Variable; "
+        "from chaincommand.models.anomaly_detector import AnomalyDetector; "
+        "ad = AnomalyDetector(); "
+        "metrics = ad.evaluate() if hasattr(ad, 'evaluate') else {'precision': None, 'recall': None, 'f1': None}; "
+        "thresholds = {'precision_threshold': float(Variable.get('cc_anomaly_precision_threshold', default_var='0.80')), "
+        "'recall_threshold': float(Variable.get('cc_anomaly_recall_threshold', default_var='0.70'))}; "
+        "metrics['thresholds'] = thresholds; "
         "print(json.dumps(metrics))\"",
     )
 

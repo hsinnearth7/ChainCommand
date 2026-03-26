@@ -4,18 +4,23 @@
   "data_asset_type": null,
   "meta": {
     "great_expectations_version": "0.18.0",
-    "description": "Expectations for inventory status data"
+    "description": "Expectations for inventory status data aligned with Product schema"
   },
   "expectations": [
     {
       "expectation_type": "expect_table_columns_to_match_set",
       "kwargs": {
         "column_set": [
-          "product_id", "warehouse_id", "quantity_on_hand",
-          "reorder_point", "safety_stock", "lead_time_days",
-          "unit_cost", "last_updated"
+          "product_id", "name", "category",
+          "unit_cost", "selling_price", "lead_time_days",
+          "min_order_qty", "current_stock",
+          "reorder_point", "safety_stock",
+          "daily_demand_avg", "daily_demand_std"
         ],
         "exact_match": false
+      },
+      "meta": {
+        "notes": "Columns aligned with Product schema in schemas.py"
       }
     },
     {
@@ -27,25 +32,19 @@
     {
       "expectation_type": "expect_column_values_to_not_be_null",
       "kwargs": {
-        "column": "warehouse_id"
-      }
-    },
-    {
-      "expectation_type": "expect_column_values_to_not_be_null",
-      "kwargs": {
-        "column": "quantity_on_hand"
+        "column": "current_stock"
       }
     },
     {
       "expectation_type": "expect_column_values_to_be_between",
       "kwargs": {
-        "column": "quantity_on_hand",
+        "column": "current_stock",
         "min_value": 0,
         "max_value": null,
         "strict_min": false
       },
       "meta": {
-        "notes": "Inventory quantity must be non-negative"
+        "notes": "Inventory stock must be non-negative"
       }
     },
     {
@@ -95,19 +94,22 @@
       }
     },
     {
-      "expectation_type": "expect_column_values_to_match_regex",
+      "expectation_type": "expect_column_distinct_values_to_be_in_set",
       "kwargs": {
-        "column": "warehouse_id",
-        "regex": "^WH-\\d{2,4}$"
+        "column": "category",
+        "value_set": ["electronics", "food", "pharma", "industrial", "apparel"]
+      },
+      "meta": {
+        "notes": "Must match ProductCategory enum values"
       }
     },
     {
-      "expectation_type": "expect_compound_columns_to_be_unique",
+      "expectation_type": "expect_column_values_to_be_unique",
       "kwargs": {
-        "column_list": ["product_id", "warehouse_id"]
+        "column": "product_id"
       },
       "meta": {
-        "notes": "Each product-warehouse combination must be unique"
+        "notes": "Each product must be unique"
       }
     },
     {

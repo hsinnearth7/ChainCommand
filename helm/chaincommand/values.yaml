@@ -2,7 +2,7 @@ replicaCount: 2
 
 image:
   repository: chaincommand
-  tag: latest
+  tag: "3.0.0"
   pullPolicy: IfNotPresent
 
 nameOverride: ""
@@ -39,6 +39,8 @@ postgresql:
   auth:
     database: chaincommand
     username: chaincommand
+    # CHANGE_ME — set a strong password before deploying
+    password: ""
     existingSecret: ""
   primary:
     persistence:
@@ -48,7 +50,9 @@ redis:
   enabled: true
   architecture: standalone
   auth:
-    enabled: false
+    enabled: true
+    # CHANGE_ME — set a strong password before deploying
+    password: "changeme-redis-secret"
 
 config:
   logLevel: INFO

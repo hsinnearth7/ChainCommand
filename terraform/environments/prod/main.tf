@@ -19,7 +19,7 @@ module "chaincommand" {
   vpc_cidr = "10.1.0.0/16"
 
   # EKS — production sizing
-  eks_cluster_version    = "1.29"
+  eks_cluster_version    = "1.31"
   eks_node_instance_type = "t3.xlarge"
   eks_node_min_size      = 3
   eks_node_max_size      = 20

@@ -3,7 +3,7 @@ name: chaincommand
 description: A Helm chart for ChainCommand supply chain AI platform
 type: application
 version: 0.1.0
-appVersion: "2.0.0"
+appVersion: "3.0.0"
 maintainers:
   - name: ChainCommand Team
 keywords:

@@ -12,7 +12,7 @@ from typing import Any, Dict, List
 import numpy as np
 import pandas as pd
 
-from ..data.schemas import ForecastResult
+from ..data.schemas import ForecastResult, utc_now
 from ..utils.logging_config import get_logger
 
 log = get_logger(__name__)
@@ -107,7 +107,7 @@ class ChronosForecaster:
         for i in range(horizon):
             results.append(ForecastResult(
                 product_id=product_id,
-                forecast_date=datetime.utcnow() + timedelta(days=i + 1),
+                forecast_date=utc_now() + timedelta(days=i + 1),
                 predicted_demand=round(float(max(0, median[i])), 1),
                 confidence_lower=round(float(max(0, lower[i])), 1),
                 confidence_upper=round(float(upper[i]), 1),
@@ -124,13 +124,14 @@ class ChronosForecaster:
         trend = float(np.polyfit(range(len(series)), series, 1)[0]) if len(series) > 2 else 0.0
 
         results = []
-        rng = np.random.RandomState(42)
+        product_seed = hash(product_id) % (2**31)
+        rng = np.random.RandomState(product_seed)
         for i in range(horizon):
             predicted = mean + trend * i + rng.normal(0, std * 0.2)
             predicted = max(0, predicted)
             results.append(ForecastResult(
                 product_id=product_id,
-                forecast_date=datetime.utcnow() + timedelta(days=i + 1),
+                forecast_date=utc_now() + timedelta(days=i + 1),
                 predicted_demand=round(predicted, 1),
                 confidence_lower=round(max(0, predicted - 1.65 * std), 1),
                 confidence_upper=round(predicted + 1.65 * std, 1),

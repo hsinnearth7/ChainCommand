@@ -83,7 +83,7 @@ class TestEnsembleForecaster:
     def test_compute_mape_empty(self):
         import numpy as np
 
-        assert EnsembleForecaster._compute_mape(np.array([]), []) == 100.0
+        assert EnsembleForecaster._compute_mape(np.array([]), []) is None
 
 
 class TestForecastModelProtocol:

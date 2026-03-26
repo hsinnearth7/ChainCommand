@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import threading
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..config import settings
@@ -15,7 +16,7 @@ log = get_logger(__name__)
 
 CREATE_KPI_SNAPSHOTS = """
 CREATE TABLE IF NOT EXISTS kpi_snapshots (
-    id              BIGINT IDENTITY(1,1),
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     cycle           INT NOT NULL,
     timestamp       TIMESTAMP NOT NULL DEFAULT GETDATE(),
     otif            FLOAT,
@@ -30,21 +31,23 @@ CREATE TABLE IF NOT EXISTS kpi_snapshots (
     inventory_turnover FLOAT,
     backorder_rate  FLOAT,
     supplier_defect_rate FLOAT
-);
+)
+SORTKEY(timestamp);
 """
 
 CREATE_PURCHASE_ORDERS = """
 CREATE TABLE IF NOT EXISTS purchase_orders (
     po_id           VARCHAR(64) PRIMARY KEY,
     supplier_id     VARCHAR(64),
-    product_id      VARCHAR(64),
+    product_id      VARCHAR(64) DISTKEY,
     quantity        FLOAT,
     unit_cost       FLOAT,
     total_cost      FLOAT,
     status          VARCHAR(32),
     created_at      TIMESTAMP,
     expected_delivery TIMESTAMP
-);
+)
+SORTKEY(created_at);
 """
 
 CREATE_EVENTS = """
@@ -119,12 +122,38 @@ class RedshiftClient:
         self._port = port or settings.aws_redshift_port
         self._database = database or settings.aws_redshift_db
         self._user = user or settings.aws_redshift_user
-        self._password = password or settings.aws_redshift_password
+        self._password = password or settings.aws_redshift_password.get_secret_value()
         self._iam_role = iam_role or settings.aws_redshift_iam_role
+        if self._iam_role and not re.match(r'^arn:aws:iam::\d+:role/[\w+=,.@\-/]+$', self._iam_role):
+            raise ValueError(f"Invalid IAM role ARN format: {self._iam_role}")
         self._conn: Any = None
+        self._conn_lock = threading.Lock()
 
     def _connect(self) -> Any:
-        """Establish a Redshift connection."""
+        """Establish (or return cached) Redshift connection with health check.
+
+        Thread-safe: uses a lock to prevent concurrent connection mutations
+        when called from multiple asyncio.to_thread workers.
+        """
+        with self._conn_lock:
+            return self._connect_unlocked()
+
+    def _connect_unlocked(self) -> Any:
+        """Inner connection logic (caller must hold _conn_lock)."""
+        if self._conn is not None:
+            # Verify the cached connection is still alive
+            try:
+                cur = self._conn.cursor()
+                cur.execute("SELECT 1")
+                cur.close()
+            except Exception:
+                log.warning("redshift_connection_stale, reconnecting")
+                try:
+                    self._conn.close()
+                except Exception:
+                    pass
+                self._conn = None
+
         if self._conn is None:
             import redshift_connector
 
@@ -139,19 +168,22 @@ class RedshiftClient:
 
     def close(self) -> None:
         """Close the connection."""
-        if self._conn is not None:
-            self._conn.close()
-            self._conn = None
+        with self._conn_lock:
+            if self._conn is not None:
+                self._conn.close()
+                self._conn = None
 
     def create_tables(self) -> None:
         """Create all required tables if they don't exist."""
         conn = self._connect()
         cursor = conn.cursor()
-        for ddl in ALL_CREATE_STATEMENTS:
-            cursor.execute(ddl)
-        conn.commit()
-        cursor.close()
-        log.info("redshift_tables_created")
+        try:
+            for ddl in ALL_CREATE_STATEMENTS:
+                cursor.execute(ddl)
+            conn.commit()
+            log.info("redshift_tables_created")
+        finally:
+            cursor.close()
 
     _ALLOWED_TABLES = {"kpi_snapshots", "purchase_orders", "events", "products", "suppliers"}
     _ALLOWED_FORMATS = {"JSON", "PARQUET", "CSV"}
@@ -165,11 +197,15 @@ class RedshiftClient:
         if not re.match(r'^[\w./\-]+$', s3_key):
             raise ValueError(f"Invalid S3 key: {s3_key}")
 
+        format_clause = file_format.upper()
+        if format_clause == "JSON":
+            format_clause = "JSON 'auto'"
+
         sql = f"""
             COPY {table}
             FROM 's3://{settings.aws_s3_bucket}/{s3_key}'
             IAM_ROLE '{self._iam_role}'
-            FORMAT AS {file_format.upper()}
+            FORMAT AS {format_clause}
             TIMEFORMAT 'auto'
             TRUNCATECOLUMNS
             BLANKSASNULL
@@ -177,20 +213,24 @@ class RedshiftClient:
         """
         conn = self._connect()
         cursor = conn.cursor()
-        cursor.execute(sql)
-        conn.commit()
-        cursor.close()
-        log.info("redshift_copy", table=table, s3_key=s3_key)
+        try:
+            cursor.execute(sql)
+            conn.commit()
+            log.info("redshift_copy", table=table, s3_key=s3_key)
+        finally:
+            cursor.close()
 
     def query(self, sql: str, params: Optional[Tuple] = None) -> List[Dict[str, Any]]:
         """Execute a SQL query and return results as list of dicts."""
         conn = self._connect()
         cursor = conn.cursor()
-        cursor.execute(sql, params or ())
-        columns = [desc[0] for desc in cursor.description] if cursor.description else []
-        rows = cursor.fetchall()
-        cursor.close()
-        return [dict(zip(columns, row, strict=False)) for row in rows]
+        try:
+            cursor.execute(sql, params or ())
+            columns = [desc[0] for desc in cursor.description] if cursor.description else []
+            rows = cursor.fetchall()
+            return [dict(zip(columns, row, strict=False)) for row in rows]
+        finally:
+            cursor.close()
 
     def insert_kpi_snapshot(self, cycle: int, snapshot: KPISnapshot) -> None:
         """Direct INSERT of a KPI snapshot row."""
@@ -204,22 +244,24 @@ class RedshiftClient:
         """
         conn = self._connect()
         cursor = conn.cursor()
-        cursor.execute(sql, (
-            cycle,
-            snapshot.timestamp.isoformat(),
-            snapshot.otif,
-            snapshot.fill_rate,
-            snapshot.mape,
-            snapshot.dsi,
-            snapshot.stockout_count,
-            snapshot.total_inventory_value,
-            snapshot.carrying_cost,
-            snapshot.order_cycle_time,
-            snapshot.perfect_order_rate,
-            snapshot.inventory_turnover,
-            snapshot.backorder_rate,
-            snapshot.supplier_defect_rate,
-        ))
-        conn.commit()
-        cursor.close()
-        log.info("redshift_insert_kpi", cycle=cycle)
+        try:
+            cursor.execute(sql, (
+                cycle,
+                snapshot.timestamp.isoformat(),
+                snapshot.otif,
+                snapshot.fill_rate,
+                snapshot.mape,
+                snapshot.dsi,
+                snapshot.stockout_count,
+                snapshot.total_inventory_value,
+                snapshot.carrying_cost,
+                snapshot.order_cycle_time,
+                snapshot.perfect_order_rate,
+                snapshot.inventory_turnover,
+                snapshot.backorder_rate,
+                snapshot.supplier_defect_rate,
+            ))
+            conn.commit()
+            log.info("redshift_insert_kpi", cycle=cycle)
+        finally:
+            cursor.close()

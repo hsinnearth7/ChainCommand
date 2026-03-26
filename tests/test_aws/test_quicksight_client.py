@@ -85,6 +85,23 @@ class TestCreateDataset:
         assert custom_sql["SqlQuery"] == "SELECT * FROM kpi_snapshots"
         assert "dataset_id" in result
 
+    def test_creates_dataset_accepting_data_source_id(self, qs_client):
+        qs_client._client.create_data_set.return_value = {
+            "Arn": "arn:aws:quicksight:us-east-1:123456789012:dataset/test",
+            "Status": "CREATION_SUCCESSFUL",
+        }
+
+        qs_client.create_dataset(
+            name="KPI Trends",
+            source_id="redshift-source-id",
+            sql="SELECT * FROM kpi_snapshots",
+        )
+
+        custom_sql = qs_client._client.create_data_set.call_args[1]["PhysicalTableMap"]["main"]["CustomSql"]
+        assert custom_sql["DataSourceArn"] == (
+            "arn:aws:quicksight:us-east-1:123456789012:datasource/redshift-source-id"
+        )
+
 
 class TestCreateDashboard:
     def test_creates_dashboard_with_dataset_refs(self, qs_client):
@@ -104,6 +121,21 @@ class TestCreateDashboard:
         assert len(refs) == 2
         assert refs[0]["DataSetArn"] == "arn:ds-1"
         assert "dashboard_id" in result
+
+    def test_creates_dashboard_accepting_dataset_ids(self, qs_client):
+        qs_client._client.create_dashboard.return_value = {
+            "Arn": "arn:aws:quicksight:us-east-1:123456789012:dashboard/test",
+            "CreationStatus": "CREATION_SUCCESSFUL",
+        }
+
+        qs_client.create_dashboard(
+            name="Supply Chain Overview",
+            dataset_ids=["dataset-one", "dataset-two"],
+        )
+
+        refs = qs_client._client.create_dashboard.call_args[1]["SourceEntity"]["SourceTemplate"]["DataSetReferences"]
+        assert refs[0]["DataSetArn"] == "arn:aws:quicksight:us-east-1:123456789012:dataset/dataset-one"
+        assert refs[1]["DataSetArn"] == "arn:aws:quicksight:us-east-1:123456789012:dataset/dataset-two"
 
 
 class TestListDashboards:

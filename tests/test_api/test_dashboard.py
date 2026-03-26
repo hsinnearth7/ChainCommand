@@ -7,25 +7,13 @@ from unittest.mock import patch
 import pytest
 
 
-@pytest.fixture
-def api_key():
-    from chaincommand.config import settings
-    return settings.api_key
-
-
-@pytest.fixture
-def auth_headers(api_key):
-    return {"X-API-Key": api_key}
-
-
 class TestKPIEndpoints:
     @pytest.mark.asyncio
     async def test_kpi_current_no_data(self, client, auth_headers, mock_runtime):
         with patch("chaincommand.orchestrator._runtime", mock_runtime):
             resp = await client.get("/api/kpi/current", headers=auth_headers)
-            assert resp.status_code == 200
-            data = resp.json()
-            assert "error" in data  # No KPI engine set up
+            assert resp.status_code == 503
+            assert resp.json()["detail"] == "No KPI data available yet"
 
     @pytest.mark.asyncio
     async def test_kpi_history_no_data(self, client, auth_headers, mock_runtime):
@@ -64,9 +52,7 @@ class TestInventoryEndpoints:
                 "/api/inventory/status?product_id=NONEXISTENT",
                 headers=auth_headers,
             )
-            assert resp.status_code == 200
-            data = resp.json()
-            assert data["count"] == 0
+            assert resp.status_code == 404
 
 
 class TestApprovalEndpoints:
@@ -84,8 +70,8 @@ class TestApprovalEndpoints:
                 "/api/approval/FAKE-ID/decide?approved=true",
                 headers=auth_headers,
             )
-            assert resp.status_code == 200
-            assert "error" in resp.json()
+            assert resp.status_code == 404
+            assert resp.json()["detail"] == "Approval request FAKE-ID not found"
 
 
 class TestAWSEndpoints:
@@ -102,6 +88,5 @@ class TestAWSEndpoints:
                 "/api/aws/kpi-trend/otif",
                 headers=auth_headers,
             )
-            assert resp.status_code == 200
-            data = resp.json()
-            assert "error" in data
+            assert resp.status_code == 503
+            assert resp.json()["detail"] == "AWS backend not enabled"

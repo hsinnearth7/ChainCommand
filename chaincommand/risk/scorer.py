@@ -65,6 +65,20 @@ class SupplierRiskScorer:
     }
 
     def __init__(self, weights: Optional[Dict[str, float]] = None):
+        if weights is not None:
+            required_keys = {"delivery", "quality", "financial", "geographic", "concentration"}
+            missing = required_keys - set(weights.keys())
+            if missing:
+                raise ValueError(f"Custom weights missing required keys: {missing}")
+            if any(v < 0 for v in weights.values()):
+                raise ValueError("All weight values must be non-negative")
+            weight_sum = sum(weights.values())
+            if abs(weight_sum - 1.0) > 0.05:
+                log.warning(
+                    "risk_weights_sum_not_one",
+                    weight_sum=weight_sum,
+                    msg="Weights should sum to ~1.0; results may be unexpected",
+                )
         self._weights = weights or self.WEIGHTS
         self._ml_model = None
         self._ml_trained = False
@@ -146,8 +160,8 @@ class SupplierRiskScorer:
         Returns:
             Training accuracy score
         """
-        if not HAS_SKLEARN or len(historical_data) < 10:
-            reason = "insufficient_data" if len(historical_data) < 10 else "sklearn_unavailable"
+        if not HAS_SKLEARN or len(historical_data) < 20:
+            reason = "sklearn_unavailable" if not HAS_SKLEARN else "insufficient_data"
             log.info("ml_risk_skipped", reason=reason)
             return 0.0
 
@@ -169,14 +183,37 @@ class SupplierRiskScorer:
         X = np.array(X)
         y = np.array(y)
 
+        # Need at least two classes for meaningful risk prediction
+        unique_classes, class_counts = np.unique(y, return_counts=True)
+        if len(unique_classes) < 2:
+            log.info("ml_risk_skipped", reason="single_class", unique_classes=unique_classes.tolist())
+            return 0.0
+
+        # Disable stratification when minority class is too small for a split
+        min_class_count = int(class_counts.min())
+        use_stratify = min_class_count >= 2
+        if not use_stratify:
+            log.info("ml_risk_stratify_disabled", min_class_count=min_class_count)
+
+        # Split into train/test sets (80/20) to avoid overfitting
+        from sklearn.model_selection import train_test_split
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=seed, stratify=y if use_stratify else None,
+        )
+
+        # Verify training set still has both classes after split
+        if len(np.unique(y_train)) < 2:
+            log.info("ml_risk_skipped", reason="single_class_after_split")
+            return 0.0
+
         self._ml_model = RandomForestClassifier(
             n_estimators=50, max_depth=5, random_state=seed
         )
-        self._ml_model.fit(X, y)
+        self._ml_model.fit(X_train, y_train)
         self._ml_trained = True
 
-        accuracy = float(self._ml_model.score(X, y))
-        log.info("ml_risk_trained", accuracy=accuracy, samples=len(y))
+        accuracy = float(self._ml_model.score(X_test, y_test))
+        log.info("ml_risk_trained", accuracy=accuracy, samples=len(y), test_samples=len(y_test))
         return accuracy
 
     def generate_synthetic_history(self, n_suppliers: int = 100, seed: int = 42) -> List[Dict]:
@@ -201,6 +238,7 @@ class SupplierRiskScorer:
                 + 0.15 * min(1, incidents / 3)
                 + 0.15 * min(1, lt_std / lt_mean)
             )
+            disruption_prob = float(np.clip(disruption_prob, 0.0, 1.0))
             disrupted = bool(rng.random() < disruption_prob)
 
             data.append({
@@ -244,7 +282,16 @@ class SupplierRiskScorer:
             "regional": 0.3,
             "overseas": 0.6,
         }
-        return zone_scores.get(m.geographic_zone, 0.5)
+        score = zone_scores.get(m.geographic_zone)
+        if score is None:
+            log.warning(
+                "unknown_geographic_zone",
+                supplier_id=m.supplier_id,
+                zone=m.geographic_zone,
+                fallback=0.5,
+            )
+            return 0.5
+        return score
 
     def _score_concentration(self, m: SupplierMetrics) -> float:
         """Concentration risk: dependency on this supplier."""
@@ -264,7 +311,14 @@ class SupplierRiskScorer:
             m.recent_incidents, m.years_relationship,
         ]])
         prob = self._ml_model.predict_proba(features)[0]
-        return float(prob[1]) if len(prob) > 1 else float(prob[0])
+        if len(prob) < 2:
+            # Single-class model should not be used — fall back to neutral
+            return 0.5
+        # Multi-class: find the index of the disrupted class (label=1)
+        classes = list(self._ml_model.classes_)
+        if 1 in classes:
+            return float(prob[classes.index(1)])
+        return float(prob[-1])
 
     def _generate_recommendations(
         self, m: SupplierMetrics, delivery: float, quality: float,

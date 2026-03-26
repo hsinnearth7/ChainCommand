@@ -108,8 +108,5 @@ class TestDownloadJson:
 
 class TestBuildKey:
     def test_date_partitioned_key(self, s3_client):
-        key = s3_client._build_key("kpi", "snapshot.parquet")
-        now = datetime.now(timezone.utc)
-        expected_prefix = f"test-prefix/kpi/{now.year:04d}/{now.month:02d}/{now.day:02d}/"
-        assert key.startswith(expected_prefix)
-        assert key.endswith("snapshot.parquet")
+        """_build_key was removed as dead code; verify it no longer exists."""
+        assert not hasattr(s3_client, "_build_key")

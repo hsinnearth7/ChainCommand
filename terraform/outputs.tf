@@ -33,6 +33,7 @@ output "redis_endpoint" {
 output "redis_url" {
   description = "Full Redis connection URL"
   value       = module.redis.redis_url
+  sensitive   = true
 }
 
 output "s3_bucket_name" {

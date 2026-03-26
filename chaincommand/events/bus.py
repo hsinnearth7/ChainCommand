@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 from collections import defaultdict
 from typing import Any, Callable, Coroutine, Dict, List
 
@@ -32,6 +33,29 @@ class EventBus:
         self._subscribers[event_type].append(handler)
         log.debug("event_subscribed", event_type=event_type, handler=handler.__qualname__)
 
+    def unsubscribe(self, event_type: str, handler: Handler) -> None:
+        """Remove a handler from a specific event type.
+
+        No-op if the handler is not subscribed to this event type.
+        """
+        handlers = self._subscribers.get(event_type)
+        if handlers:
+            try:
+                handlers.remove(handler)
+                log.debug("event_unsubscribed", event_type=event_type, handler=handler.__qualname__)
+            except ValueError:
+                pass  # handler not in list — nothing to remove
+
+    def unsubscribe_all(self, handler: Handler) -> None:
+        """Remove a handler from the wildcard (all-events) subscriber list.
+
+        No-op if the handler is not subscribed.
+        """
+        try:
+            self._all_subscribers.remove(handler)
+        except ValueError:
+            pass
+
     def subscribe_all(self, handler: Handler) -> None:
         """Subscribe a handler to ALL events."""
         self._all_subscribers.append(handler)
@@ -40,7 +64,7 @@ class EventBus:
         """Publish an event. Dispatches to matching subscribers."""
         self._event_log.append(event)
         if len(self._event_log) > MAX_EVENT_LOG_SIZE:
-            self._event_log = self._event_log[-MAX_EVENT_LOG_SIZE:]
+            del self._event_log[:len(self._event_log) - MAX_EVENT_LOG_SIZE]
         log.info(
             "event_published",
             event_type=event.event_type,
@@ -48,10 +72,9 @@ class EventBus:
             source=event.source_agent,
         )
 
-        # Dispatch to type-specific subscribers
+        # Dispatch to type-specific + wildcard subscribers (avoids temp list copy)
         handlers = self._subscribers.get(event.event_type, [])
-        # Also dispatch to wildcard subscribers
-        all_handlers = handlers + self._all_subscribers
+        all_handlers = itertools.chain(handlers, self._all_subscribers)
 
         tasks = [self._safe_dispatch(h, event) for h in all_handlers]
         if tasks:
@@ -71,18 +94,34 @@ class EventBus:
 
     async def start(self) -> None:
         """Start the background event loop (for queued events)."""
+        if self._task and not self._task.done():
+            return
         self._running = True
         self._task = asyncio.create_task(self._loop())
         log.info("event_bus_started")
 
     async def _loop(self) -> None:
-        """Process queued events."""
-        while self._running:
-            try:
-                event = await asyncio.wait_for(self._queue.get(), timeout=1.0)
-                await self.publish(event)
-            except asyncio.TimeoutError:
-                continue
+        """Process queued events submitted via :meth:`enqueue`.
+
+        Runs as a background task started by :meth:`start` and stopped by
+        :meth:`stop`.  Each dequeued event is dispatched through the normal
+        :meth:`publish` path so that all subscribers receive it.
+        """
+        try:
+            while self._running:
+                try:
+                    event = await asyncio.wait_for(self._queue.get(), timeout=1.0)
+                    await self.publish(event)
+                except asyncio.TimeoutError:
+                    continue
+        except asyncio.CancelledError:
+            # Drain any remaining events so they are not silently lost
+            while not self._queue.empty():
+                try:
+                    event = self._queue.get_nowait()
+                    await self.publish(event)
+                except asyncio.QueueEmpty:
+                    break
 
     async def stop(self) -> None:
         """Stop the event loop."""
@@ -93,6 +132,7 @@ class EventBus:
                 await self._task
             except asyncio.CancelledError:
                 pass
+            self._task = None
         log.info("event_bus_stopped")
 
     async def enqueue(self, event: SupplyChainEvent) -> None:

@@ -22,6 +22,7 @@ with DAG(
     schedule="0 2 * * 1",  # Every Monday at 2 AM
     start_date=datetime(2025, 1, 1),
     catchup=False,
+    dagrun_timeout=timedelta(hours=4),
     tags=["ml", "rl", "training", "supply-chain"],
 ) as dag:
 

@@ -86,6 +86,10 @@ class SupplierAllocationOptimizer:
         max_sup = max_suppliers if max_suppliers is not None else settings.ortools_max_suppliers
         tl = time_limit_ms if time_limit_ms is not None else settings.ortools_time_limit_ms
 
+        if not candidates:
+            log.warning("optimize_empty_candidates", msg="No supplier candidates provided")
+            return AllocationResult(solver_status="no_candidates")
+
         if self._has_ortools:
             return self._solve_cpsat(candidates, demand, lam, max_sup, max_lead_time, tl)
         return self._solve_greedy(candidates, demand, lam, max_sup, max_lead_time)
@@ -105,22 +109,22 @@ class SupplierAllocationOptimizer:
 
         model = cp_model.CpModel()
         n = len(candidates)
-        scale = 100  # scale float → int for CP-SAT
+        scale = 100  # scale float -> int for CP-SAT (use round() to avoid truncation bias)
 
         # Decision variables
-        x = [model.new_int_var(0, int(c.capacity * scale), f"x_{i}") for i, c in enumerate(candidates)]
+        x = [model.new_int_var(0, round(c.capacity * scale), f"x_{i}") for i, c in enumerate(candidates)]
         y = [model.new_bool_var(f"y_{i}") for i in range(n)]
 
         # Demand constraint: Σ x_i >= demand * scale
-        model.add(sum(x) >= int(demand * scale))
+        model.add(sum(x) >= round(demand * scale))
 
         for i, c in enumerate(candidates):
             # Link x and y: x_i <= cap_i * y_i
-            model.add(x[i] <= int(c.capacity * scale) * y[i])
+            model.add(x[i] <= round(c.capacity * scale) * y[i])
 
             # MOQ: x_i >= MOQ_i * y_i (when selected)
             if c.min_order_qty > 0:
-                model.add(x[i] >= int(c.min_order_qty * scale) * y[i])
+                model.add(x[i] >= round(c.min_order_qty * scale) * y[i])
 
             # Lead-time filter
             if max_lead_time is not None and c.lead_time_days > max_lead_time:
@@ -133,8 +137,8 @@ class SupplierAllocationOptimizer:
         cost_terms = []
         risk_terms = []
         for i, c in enumerate(candidates):
-            cost_terms.append(int(c.unit_cost * 1000) * x[i])
-            risk_terms.append(int(c.risk_score * risk_lambda * 1000) * x[i])
+            cost_terms.append(round(c.unit_cost * 1000) * x[i])
+            risk_terms.append(round(c.risk_score * risk_lambda * 1000) * x[i])
 
         model.minimize(sum(cost_terms) + sum(risk_terms))
 
@@ -200,6 +204,13 @@ class SupplierAllocationOptimizer:
         for c in scored[:max_suppliers]:
             if remaining <= 0:
                 break
+
+            # Skip this supplier if remaining demand is below its MOQ:
+            # ordering MOQ would overshoot demand, and capping to remaining
+            # would silently violate MOQ.
+            if c.min_order_qty > 0 and remaining < c.min_order_qty:
+                continue
+
             qty = min(remaining, c.capacity)
             if c.min_order_qty > 0:
                 qty = max(qty, c.min_order_qty)
@@ -208,13 +219,17 @@ class SupplierAllocationOptimizer:
             total_cost += qty * c.unit_cost
             total_risk += qty * c.risk_score
             remaining -= qty
+            if remaining <= 0:
+                break
+
+        solver_status = "greedy_partial" if remaining > 0 else "greedy_fallback"
 
         return AllocationResult(
             allocations=allocations,
             total_cost=round(total_cost, 2),
             total_risk=round(total_risk, 4),
             objective_value=round(total_cost + risk_lambda * total_risk, 2),
-            solver_status="greedy_fallback",
+            solver_status=solver_status,
             method="greedy",
         )
 
@@ -225,7 +240,7 @@ class SupplierAllocationOptimizer:
         steps: int = 11,
     ) -> SensitivityResult:
         """Sweep λ from 0→1, find the cost-risk elbow point."""
-        lambdas = [i / (steps - 1) for i in range(steps)]
+        lambdas = [i / max(1, steps - 1) for i in range(steps)]
         costs: List[float] = []
         risks: List[float] = []
 
@@ -234,15 +249,40 @@ class SupplierAllocationOptimizer:
             costs.append(result.total_cost)
             risks.append(result.total_risk)
 
-        # Find elbow: point with max second derivative of (cost + risk) curve
+        # Find elbow using a combined approach:
+        # 1. Compute normalized second derivative of (cost + risk) curve
+        # 2. Compute percentage-change in the composite objective
+        # 3. Pick the point where both signals agree the trade-off is sharpest
         elbow_idx = 0
         if len(lambdas) >= 3:
+            composite = [c + r for c, r in zip(costs, risks)]
+
+            # ── Second-derivative analysis (normalized) ───────────
             second_derivs = []
-            for i in range(1, len(lambdas) - 1):
-                d2 = (costs[i + 1] - 2 * costs[i] + costs[i - 1]) + (risks[i + 1] - 2 * risks[i] + risks[i - 1])
+            for i in range(1, len(composite) - 1):
+                d2 = composite[i + 1] - 2 * composite[i] + composite[i - 1]
                 second_derivs.append(abs(d2))
-            if second_derivs:
-                elbow_idx = second_derivs.index(max(second_derivs)) + 1
+
+            # Normalize to [0, 1] to make it comparable
+            sd_max = max(second_derivs) if second_derivs else 1.0
+            sd_norm = [v / sd_max if sd_max > 0 else 0.0 for v in second_derivs]
+
+            # ── Percentage-change analysis ────────────────────────
+            pct_changes = []
+            for i in range(1, len(composite) - 1):
+                prev_delta = composite[i] - composite[i - 1]
+                next_delta = composite[i + 1] - composite[i]
+                denom = abs(prev_delta) if abs(prev_delta) > 1e-9 else 1e-9
+                pct_change = abs((next_delta - prev_delta) / denom)
+                pct_changes.append(pct_change)
+
+            pc_max = max(pct_changes) if pct_changes else 1.0
+            pc_norm = [v / pc_max if pc_max > 0 else 0.0 for v in pct_changes]
+
+            # ── Combined score (equal weight) ─────────────────────
+            combined = [0.5 * s + 0.5 * p for s, p in zip(sd_norm, pc_norm)]
+            if combined:
+                elbow_idx = combined.index(max(combined)) + 1
 
         return SensitivityResult(
             lambda_values=lambdas,

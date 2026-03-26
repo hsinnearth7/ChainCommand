@@ -23,6 +23,11 @@ variable "eks_security_group" {
   type = string
 }
 
+variable "auth_token" {
+  type      = string
+  sensitive = true
+}
+
 # --- Subnet Group ---
 
 resource "aws_elasticache_subnet_group" "main" {
@@ -74,8 +79,9 @@ resource "aws_elasticache_replication_group" "main" {
   subnet_group_name  = aws_elasticache_subnet_group.main.name
   security_group_ids = [aws_security_group.redis.id]
 
+  auth_token                 = var.auth_token
   at_rest_encryption_enabled = true
-  transit_encryption_enabled = false
+  transit_encryption_enabled = true
 
   automatic_failover_enabled = var.environment == "prod"
   multi_az_enabled           = var.environment == "prod"
@@ -98,7 +104,8 @@ output "endpoint" {
 }
 
 output "redis_url" {
-  value = "redis://${aws_elasticache_replication_group.main.primary_endpoint_address}:6379/0"
+  value     = aws_elasticache_replication_group.main.transit_encryption_enabled ? "rediss://:${aws_elasticache_replication_group.main.auth_token}@${aws_elasticache_replication_group.main.primary_endpoint_address}:6379/0" : "redis://${aws_elasticache_replication_group.main.primary_endpoint_address}:6379/0"
+  sensitive = true
 }
 
 output "security_group_id" {

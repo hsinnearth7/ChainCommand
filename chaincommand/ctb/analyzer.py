@@ -105,6 +105,8 @@ class CTBAnalyzer:
 
         for part_id, required_qty in requirements.items():
             info = part_info[part_id]
+            # NOTE: on_order is treated as immediately available. In production,
+            # this should be discounted by expected arrival date vs. build date.
             available = inventory.get(part_id, 0.0) + on_order.get(part_id, 0.0)
             total_parts += 1
             total_cost += required_qty * info["unit_cost"]
@@ -171,32 +173,68 @@ class CTBAnalyzer:
         inventory: Dict[str, float],
         on_order: Optional[Dict[str, float]] = None,
     ) -> List[CTBReport]:
-        """Analyze CTB for multiple assemblies."""
+        """Analyze CTB for multiple assemblies with shared inventory tracking.
+
+        Each assembly's analysis uses a running copy of the inventory pool.
+        After each assembly is analyzed, the parts it would consume are
+        subtracted so that subsequent assemblies see the reduced availability.
+        """
+        # Work on a mutable copy so the caller's dict is not modified
+        remaining_inventory = dict(inventory)
+        remaining_on_order = dict(on_order) if on_order else {}
         reports = []
+
         for assembly_id, qty in build_plan.items():
             tree = bom_trees.get(assembly_id)
             if tree:
-                report = self.analyze(tree, assembly_id, qty, inventory, on_order)
+                report = self.analyze(
+                    tree, assembly_id, qty, remaining_inventory, remaining_on_order,
+                )
                 reports.append(report)
+
+                # Only subtract consumed parts from the shared pool when the
+                # assembly is fully buildable; non-buildable assemblies should
+                # not deplete inventory meant for other assemblies.
+                if report.is_clear:
+                    explosion = tree.explode(assembly_id, parent_qty=qty)
+                    for row in explosion:
+                        if row.make_or_buy == "make":
+                            continue
+                        needed = row.extended_quantity
+                        # Consume from on_order first, then inventory
+                        oo = remaining_on_order.get(row.part_id, 0.0)
+                        from_oo = min(oo, needed)
+                        remaining_on_order[row.part_id] = oo - from_oo
+                        needed -= from_oo
+
+                        inv = remaining_inventory.get(row.part_id, 0.0)
+                        from_inv = min(inv, needed)
+                        remaining_inventory[row.part_id] = inv - from_inv
+
         return reports
 
     def _find_critical_parts(self, bom_tree: BOMTree, root_id: str) -> set:
         """Find parts on the critical path (longest lead-time chain)."""
         critical = set()
-        self._trace_critical_path(bom_tree, root_id, critical)
+        self._trace_critical_path(bom_tree, root_id, critical, set())
         return critical
 
-    def _trace_critical_path(self, tree: BOMTree, part_id: str, critical: set) -> int:
+    def _trace_critical_path(self, tree: BOMTree, part_id: str, critical: set, visited: set) -> int:
+        if part_id in visited:
+            return 0  # cycle detected — break recursion
+        visited.add(part_id)
+
         children = tree.get_children(part_id)
         if not children:
             item = tree.items.get(part_id)
+            visited.discard(part_id)
             return item.lead_time_days if item else 0
 
         max_path = 0
         max_child = None
         for child in children:
-            path = self._trace_critical_path(tree, child.part_id, critical)
-            if path > max_path:
+            path = self._trace_critical_path(tree, child.part_id, critical, visited)
+            if path >= max_path:
                 max_path = path
                 max_child = child.part_id
 
@@ -204,4 +242,5 @@ class CTBAnalyzer:
             critical.add(max_child)
 
         item = tree.items.get(part_id)
+        visited.discard(part_id)
         return max_path + (item.lead_time_days if item else 0)

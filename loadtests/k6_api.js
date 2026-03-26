@@ -39,9 +39,9 @@ export default function () {
   check(inv, { 'inventory 200': (r) => r.status === 200 });
   errorRate.add(inv.status !== 200);
 
-  // Agents status
-  const agents = http.get(`${BASE_URL}/api/agents/status`, { headers });
-  check(agents, { 'agents 200': (r) => r.status === 200 });
+  // Simulation status
+  const sim = http.get(`${BASE_URL}/api/simulation/status`, { headers });
+  check(sim, { 'simulation 200': (r) => r.status === 200 });
 
   // Events
   const events = http.get(`${BASE_URL}/api/events/recent?limit=10`, { headers });

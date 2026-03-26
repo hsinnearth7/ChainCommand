@@ -4,9 +4,9 @@ include:
   - "serving/**/*.py"
 python:
   packages:
-    - numpy>=1.24
-    - pandas>=2.0
+    - numpy>=1.26
+    - pandas>=2.2
     - scikit-learn>=1.4
-    - pydantic>=2.0
+    - pydantic>=2.7
 docker:
   python_version: "3.11"

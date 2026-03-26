@@ -72,8 +72,18 @@ class TestCopyFromS3:
         assert "COPY events" in sql_executed
         assert "FROM 's3://" in sql_executed
         assert "IAM_ROLE" in sql_executed
-        assert "FORMAT AS JSON" in sql_executed
+        assert "FORMAT AS JSON 'auto'" in sql_executed
         mock_conn.commit.assert_called_once()
+
+    def test_copy_parquet_format_unchanged(self, redshift_client, mock_connector):
+        _, mock_conn = mock_connector
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+
+        redshift_client.copy_from_s3("products", "supply-chain/products/file.parquet", file_format="PARQUET")
+
+        sql_executed = mock_cursor.execute.call_args[0][0]
+        assert "FORMAT AS PARQUET" in sql_executed
 
 
 class TestQuery:

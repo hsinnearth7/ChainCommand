@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import io
 import json
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -30,18 +29,6 @@ class S3Client:
         self._prefix = (prefix or settings.aws_s3_prefix).rstrip("/")
         self._client = boto3.client("s3", region_name=region or settings.aws_region)
 
-    def _build_key(self, table: str, filename: str) -> str:
-        """Build a date-partitioned S3 key.
-
-        Format: {prefix}/{table}/{year}/{month}/{day}/{filename}
-        """
-        now = datetime.now(timezone.utc)
-        return (
-            f"{self._prefix}/{table}"
-            f"/{now.year:04d}/{now.month:02d}/{now.day:02d}"
-            f"/{filename}"
-        )
-
     def upload_dataframe(self, df: pd.DataFrame, key: str) -> str:
         """Upload a DataFrame as Parquet to S3."""
         buf = io.BytesIO()
@@ -58,7 +45,10 @@ class S3Client:
 
     def upload_jsonl(self, records: List[Dict[str, Any]], key: str) -> str:
         """Upload a list of dicts as JSONL to S3."""
-        lines = "\n".join(json.dumps(r, default=str) for r in records)
+        if not records:
+            log.warning("s3_upload_jsonl_empty_records", key=key)
+            return f"s3://{self._bucket}/{key}"
+        lines = "\n".join(json.dumps(r, default=str) for r in records) + "\n"
         self._client.put_object(
             Bucket=self._bucket,
             Key=key,
@@ -81,17 +71,44 @@ class S3Client:
         return f"s3://{self._bucket}/{key}"
 
     def list_objects(self, prefix: str) -> List[Dict[str, Any]]:
-        """List objects under a given S3 prefix."""
+        """List all objects under a given S3 prefix, handling pagination.
+
+        S3 ``list_objects_v2`` returns at most 1 000 keys per response.
+        This method follows ``ContinuationToken`` pages until all objects
+        have been collected.
+        """
         full_prefix = f"{self._prefix}/{prefix}"
-        resp = self._client.list_objects_v2(Bucket=self._bucket, Prefix=full_prefix)
-        contents = resp.get("Contents", [])
-        return [
-            {"key": obj["Key"], "size": obj["Size"], "last_modified": obj["LastModified"]}
-            for obj in contents
-        ]
+        all_objects: List[Dict[str, Any]] = []
+        continuation_token: Optional[str] = None
+
+        while True:
+            kwargs: Dict[str, Any] = {
+                "Bucket": self._bucket,
+                "Prefix": full_prefix,
+            }
+            if continuation_token:
+                kwargs["ContinuationToken"] = continuation_token
+
+            resp = self._client.list_objects_v2(**kwargs)
+            contents = resp.get("Contents", [])
+            all_objects.extend(
+                {"key": obj["Key"], "size": obj["Size"], "last_modified": obj["LastModified"]}
+                for obj in contents
+            )
+
+            if resp.get("IsTruncated"):
+                continuation_token = resp.get("NextContinuationToken")
+            else:
+                break
+
+        return all_objects
 
     def download_json(self, key: str) -> Any:
         """Download and parse a JSON object from S3."""
         resp = self._client.get_object(Bucket=self._bucket, Key=key)
-        body = resp["Body"].read().decode("utf-8")
+        stream = resp["Body"]
+        try:
+            body = stream.read().decode("utf-8")
+        finally:
+            stream.close()
         return json.loads(body)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from chaincommand.data.schemas import (
     KPISnapshot,
@@ -26,7 +26,7 @@ class TestKPICalculation:
             unit_cost=10.0,
             total_cost=1000.0,
             status=OrderStatus.DELIVERED,
-            expected_delivery=datetime.utcnow(),
+            expected_delivery=datetime.now(UTC),
         )
         snapshot = kpi_engine.calculate_snapshot(sample_products, [po], sample_suppliers)
         assert snapshot.otif >= 0

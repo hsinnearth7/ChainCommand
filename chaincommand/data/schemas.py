@@ -2,12 +2,24 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+def utc_now() -> datetime:
+    """Return a timezone-aware UTC timestamp."""
+    return datetime.now(UTC)
+
+
+def ensure_utc(value: datetime) -> datetime:
+    """Normalize datetimes to aware UTC for safe comparisons."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 # ── Enums ────────────────────────────────────────────────
 
@@ -47,11 +59,11 @@ class Product(BaseModel):
     product_id: str = Field(default_factory=lambda: f"PRD-{uuid4().hex[:8]}")
     name: str
     category: ProductCategory
-    unit_cost: float
-    selling_price: float
+    unit_cost: float = Field(ge=0)
+    selling_price: float = Field(ge=0)
     lead_time_days: int = 7
     min_order_qty: int = 100
-    current_stock: float = 0.0
+    current_stock: float = Field(default=0.0, ge=0)
     reorder_point: float = 0.0
     safety_stock: float = 0.0
     daily_demand_avg: float = 0.0
@@ -84,7 +96,7 @@ class DemandRecord(BaseModel):
 
 
 class InventorySnapshot(BaseModel):
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utc_now)
     product_id: str
     on_hand: float
     in_transit: float = 0.0
@@ -97,19 +109,26 @@ class PurchaseOrder(BaseModel):
     po_id: str = Field(default_factory=lambda: f"PO-{uuid4().hex[:8]}")
     supplier_id: str
     product_id: str
-    quantity: float
-    unit_cost: float
+    quantity: float = Field(ge=0)
+    unit_cost: float = Field(ge=0)
     total_cost: float = 0.0
     status: OrderStatus = OrderStatus.PENDING
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
     expected_delivery: Optional[datetime] = None
     approval_status: ApprovalStatus = ApprovalStatus.PENDING
     approved_by: Optional[str] = None
 
+    @model_validator(mode="after")
+    def _auto_calculate_total_cost(self) -> "PurchaseOrder":
+        """Auto-calculate total_cost from quantity * unit_cost when total_cost is 0."""
+        if self.total_cost == 0 and self.quantity > 0 and self.unit_cost > 0:
+            self.total_cost = self.quantity * self.unit_cost
+        return self
+
 
 class AnomalyRecord(BaseModel):
     anomaly_id: str = Field(default_factory=lambda: f"ANM-{uuid4().hex[:8]}")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utc_now)
     anomaly_type: str  # demand_spike, cost_anomaly, lead_time_anomaly, quality_issue
     product_id: Optional[str] = None
     supplier_id: Optional[str] = None
@@ -121,7 +140,7 @@ class AnomalyRecord(BaseModel):
 
 class MarketIntelligence(BaseModel):
     intel_id: str = Field(default_factory=lambda: f"MKT-{uuid4().hex[:8]}")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utc_now)
     source: str = "simulated"
     topic: str = ""
     summary: str = ""
@@ -133,10 +152,10 @@ class MarketIntelligence(BaseModel):
 # ── KPI Models ───────────────────────────────────────────
 
 class KPISnapshot(BaseModel):
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utc_now)
     otif: float = 0.0  # On-Time In-Full
     fill_rate: float = 0.0
-    mape: float = 0.0  # Mean Absolute Percentage Error
+    mape: float | None = None  # Mean Absolute Percentage Error
     dsi: float = 0.0  # Days Sales of Inventory
     stockout_count: int = 0
     total_inventory_value: float = 0.0
@@ -152,7 +171,7 @@ class KPISnapshot(BaseModel):
 
 class SupplyChainEvent(BaseModel):
     event_id: str = Field(default_factory=lambda: f"EVT-{uuid4().hex[:8]}")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utc_now)
     event_type: str
     severity: AlertSeverity = AlertSeverity.MEDIUM
     source_agent: str = ""
@@ -164,7 +183,7 @@ class SupplyChainEvent(BaseModel):
 
 class HumanApprovalRequest(BaseModel):
     request_id: str = Field(default_factory=lambda: f"APR-{uuid4().hex[:8]}")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utc_now)
     request_type: str  # purchase_order, inventory_adjustment, supplier_change
     description: str = ""
     estimated_cost: float = 0.0
@@ -180,7 +199,7 @@ class HumanApprovalRequest(BaseModel):
 
 class AgentAction(BaseModel):
     action_id: str = Field(default_factory=lambda: f"ACT-{uuid4().hex[:8]}")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utc_now)
     agent_name: str
     action_type: str
     description: str = ""

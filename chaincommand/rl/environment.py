@@ -148,12 +148,14 @@ if HAS_GYM:
             return self._get_obs(), reward, terminated, truncated, info
 
         def _get_obs(self) -> np.ndarray:
-            stock_ratio = min(1.0, self._stock / self.config.max_stock)
+            max_stock = self.config.max_stock if self.config.max_stock > 0 else 1.0
+            max_demand = self.config.max_demand if self.config.max_demand > 0 else 1.0
+            stock_ratio = min(1.0, self._stock / max_stock)
             avg_demand = np.mean(self._recent_demands) if self._recent_demands else self.config.demand_mean
-            demand_ratio = min(1.0, avg_demand / self.config.max_demand)
+            demand_ratio = min(1.0, avg_demand / max_demand)
             dow = (self._day % 7) / 7.0
             pending_qty = sum(q for _, q in self._pending_orders)
-            pending_ratio = min(1.0, pending_qty / self.config.max_stock)
+            pending_ratio = min(1.0, pending_qty / max_stock)
             days_ratio = min(1.0, self._days_since_order / 30.0)
             return np.array([stock_ratio, demand_ratio, dow, pending_ratio, days_ratio], dtype=np.float32)
 
@@ -178,6 +180,7 @@ else:
             self._pending_orders: list = []
             self._days_since_order = 0
             self._recent_demands: list = []
+            self._episode_rewards: list = []
             self._rng = np.random.default_rng()
             log.warning("gymnasium_not_installed", fallback="stub_env")
 
@@ -189,6 +192,7 @@ else:
             self._pending_orders = []
             self._days_since_order = 30
             self._recent_demands = []
+            self._episode_rewards = []
             return self._get_obs(), {}
 
         def step(self, action):
@@ -226,6 +230,7 @@ else:
             reward = -(holding_cost + stockout_cost + ordering_cost)
 
             self._day += 1
+            self._episode_rewards.append(reward)
             terminated = self._day >= self.config.episode_length
             truncated = False
 
@@ -242,11 +247,13 @@ else:
             return self._get_obs(), reward, terminated, truncated, info
 
         def _get_obs(self) -> np.ndarray:
-            stock_ratio = min(1.0, self._stock / self.config.max_stock) if self.config.max_stock > 0 else 0.0
+            max_stock = max(self.config.max_stock, 1.0)
+            max_demand = max(self.config.max_demand, 1.0)
+            stock_ratio = min(1.0, self._stock / max_stock)
             avg_demand = np.mean(self._recent_demands) if self._recent_demands else self.config.demand_mean
-            demand_ratio = min(1.0, avg_demand / self.config.max_demand) if self.config.max_demand > 0 else 0.0
+            demand_ratio = min(1.0, avg_demand / max_demand)
             dow = (self._day % 7) / 7.0
             pending_qty = sum(q for _, q in self._pending_orders)
-            pending_ratio = min(1.0, pending_qty / self.config.max_stock) if self.config.max_stock > 0 else 0.0
+            pending_ratio = min(1.0, pending_qty / max_stock)
             days_ratio = min(1.0, self._days_since_order / 30.0)
             return np.array([stock_ratio, demand_ratio, dow, pending_ratio, days_ratio], dtype=np.float32)

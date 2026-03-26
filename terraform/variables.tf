@@ -14,6 +14,11 @@ variable "environment" {
   description = "Deployment environment (dev, staging, prod)"
   type        = string
   default     = "dev"
+
+  validation {
+    condition     = contains(["dev", "staging", "prod"], var.environment)
+    error_message = "environment must be one of: dev, staging, prod."
+  }
 }
 
 variable "vpc_cidr" {
@@ -27,7 +32,7 @@ variable "vpc_cidr" {
 variable "eks_cluster_version" {
   description = "Kubernetes version for EKS cluster"
   type        = string
-  default     = "1.29"
+  default     = "1.31"
 }
 
 variable "eks_node_instance_type" {
@@ -86,4 +91,10 @@ variable "redis_node_type" {
   description = "ElastiCache Redis node type"
   type        = string
   default     = "cache.t3.micro"
+}
+
+variable "redis_auth_token" {
+  description = "Auth token for ElastiCache Redis (must be 16-128 chars for transit encryption)"
+  type        = string
+  sensitive   = true
 }

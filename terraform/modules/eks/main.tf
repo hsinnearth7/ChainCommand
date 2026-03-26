@@ -39,6 +39,12 @@ variable "node_desired_size" {
   default = 2
 }
 
+variable "allowed_cidr_blocks" {
+  description = "CIDR blocks allowed to access the EKS API server on port 443"
+  type        = list(string)
+  default     = []  # Must be explicitly set — do NOT default to 0.0.0.0/0
+}
+
 # --- IAM Role for EKS Cluster ---
 
 resource "aws_iam_role" "cluster" {
@@ -78,7 +84,7 @@ resource "aws_security_group" "cluster" {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = var.allowed_cidr_blocks
   }
 
   egress {
@@ -108,7 +114,7 @@ resource "aws_eks_cluster" "main" {
     subnet_ids              = var.subnet_ids
     security_group_ids      = [aws_security_group.cluster.id]
     endpoint_private_access = true
-    endpoint_public_access  = true
+    endpoint_public_access  = false
   }
 
   enabled_cluster_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]

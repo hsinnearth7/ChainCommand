@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import random
+import threading
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -12,7 +14,7 @@ import pandas as pd
 from .config import settings
 from .data.schemas import (
     HumanApprovalRequest,
-    KPISnapshot,
+    OrderStatus,
     Product,
     PurchaseOrder,
     Supplier,
@@ -32,35 +34,71 @@ class _RuntimeState:
     suppliers: Optional[List[Supplier]] = None
     demand_df: Optional[pd.DataFrame] = None
 
-    # ML models
-    forecaster: Any = None
-    anomaly_detector: Any = None
-    optimizer: Any = None
+    # ML models  (typed as Optional for clarity; actual types are module-local)
+    forecaster: Optional[Any] = None
+    anomaly_detector: Optional[Any] = None
+    optimizer: Optional[Any] = None
 
     # Engines
-    kpi_engine: Any = None
-    event_bus: Any = None
-    monitor: Any = None
+    kpi_engine: Optional[Any] = None
+    event_bus: Optional[Any] = None
+    monitor: Optional[Any] = None
 
     # New modules
-    bom_manager: Any = None
-    rl_policy: Any = None
-    risk_scorer: Any = None
-    ctb_analyzer: Any = None
+    bom_manager: Optional[Any] = None
+    rl_policy: Optional[Any] = None
+    risk_scorer: Optional[Any] = None
+    ctb_analyzer: Optional[Any] = None
 
     # Transaction state
     purchase_orders: List[PurchaseOrder] = field(default_factory=list)
     pending_approvals: Dict[str, HumanApprovalRequest] = field(default_factory=dict)
-    kpi_history: List[KPISnapshot] = field(default_factory=list)
 
     # Results cache
     last_cycle_results: Dict[str, Any] = field(default_factory=dict)
+
+    # Mutable runtime config — values that can be changed at runtime
+    # without mutating the frozen Pydantic Settings object.
+    runtime_config: Dict[str, Any] = field(default_factory=lambda: {
+        "simulation_speed": settings.simulation_speed,
+    })
 
     # Persistence backend
     backend: Any = None
 
 
 _runtime = _RuntimeState()
+_runtime_lock: asyncio.Lock | None = None
+
+
+def _get_runtime_lock() -> asyncio.Lock:
+    """Lazy-init the runtime lock inside an event loop (Python 3.12+ safe)."""
+    global _runtime_lock
+    if _runtime_lock is None:
+        _runtime_lock = asyncio.Lock()
+    return _runtime_lock
+
+
+def _reset_runtime_state() -> None:
+    """Reset shared runtime state to a clean baseline."""
+    _runtime.products = None
+    _runtime.suppliers = None
+    _runtime.demand_df = None
+    _runtime.forecaster = None
+    _runtime.anomaly_detector = None
+    _runtime.optimizer = None
+    _runtime.kpi_engine = None
+    _runtime.event_bus = None
+    _runtime.monitor = None
+    _runtime.bom_manager = None
+    _runtime.rl_policy = None
+    _runtime.risk_scorer = None
+    _runtime.ctb_analyzer = None
+    _runtime.purchase_orders.clear()
+    _runtime.pending_approvals.clear()
+    _runtime.last_cycle_results.clear()
+    _runtime.runtime_config = {"simulation_speed": settings.simulation_speed}
+    _runtime.backend = None
 
 
 # ── Orchestrator ────────────────────────────────────────────
@@ -68,12 +106,14 @@ _runtime = _RuntimeState()
 class ChainCommandOrchestrator:
     """Main orchestrator: initializes modules, runs optimization cycles."""
 
-    STAGES = ["data", "ml", "engines", "bom", "rl", "risk", "cpsat", "ctb", "kpi"]
+    STAGES = ["data", "ml", "engines", "bom", "rl", "risk", "kpi"]
 
     def __init__(self, on_progress: Any = None) -> None:
         self._running = False
+        self._initialized = False
         self._cycle_count = 0
         self._loop_task: Optional[asyncio.Task] = None
+        self._loop_lock = asyncio.Lock()
         self._on_progress = on_progress or (lambda *a, **kw: None)
 
     @property
@@ -86,15 +126,27 @@ class ChainCommandOrchestrator:
 
     async def initialize(self) -> None:
         """Bootstrap the entire system."""
+        async with _get_runtime_lock():
+            await self._initialize_locked()
+
+    async def _initialize_locked(self) -> None:
+        """Bootstrap the entire system (caller must hold _runtime_lock)."""
+        if self._initialized:
+            log.info("initialize_skipped_already_initialized")
+            return
+
         setup_logging()
-        random.seed(settings.random_seed)
+        self._rng = random.Random(settings.random_seed)
+        self._running = False
+        self._cycle_count = 0
+        _reset_runtime_state()
         log.info("initializing")
 
         # Phase 0: Generate synthetic data
         self._on_progress("data", "running", {})
         from .data.generator import generate_all
 
-        products, suppliers, demand_df = generate_all()
+        products, suppliers, demand_df = generate_all(rng=self._rng)
         _runtime.products = products
         _runtime.suppliers = suppliers
         _runtime.demand_df = demand_df
@@ -108,7 +160,7 @@ class ChainCommandOrchestrator:
         from .models.optimizer import HybridOptimizer
 
         _runtime.forecaster = EnsembleForecaster()
-        product_ids = [p.product_id for p in products[:20]]
+        product_ids = [p.product_id for p in products[:settings.max_train_products]]
         _runtime.forecaster.train_all(demand_df, product_ids)
         _runtime.anomaly_detector = AnomalyDetector()
         _runtime.anomaly_detector.train(demand_df)
@@ -124,6 +176,7 @@ class ChainCommandOrchestrator:
 
         _runtime.kpi_engine = KPIEngine()
         _runtime.event_bus = EventBus()
+        await _runtime.event_bus.start()
         _runtime.monitor = ProactiveMonitor(
             _runtime.event_bus, _runtime.kpi_engine, _runtime.anomaly_detector
         )
@@ -185,7 +238,10 @@ class ChainCommandOrchestrator:
 
         # Phase 6: Initial KPI snapshot
         self._on_progress("kpi", "running", {})
-        _runtime.kpi_engine.calculate_snapshot(products, _runtime.purchase_orders, suppliers)
+        _runtime.kpi_engine.calculate_snapshot(
+            products, _runtime.purchase_orders, suppliers,
+            forecaster=_runtime.forecaster,
+        )
         log.info("initial_kpi_computed")
         self._on_progress("kpi", "completed", {})
 
@@ -197,10 +253,16 @@ class ChainCommandOrchestrator:
         if _runtime.demand_df is not None:
             await _runtime.backend.persist_demand_history(_runtime.demand_df)
 
+        self._initialized = True
         log.info("system_ready")
 
     async def run_cycle(self) -> Dict[str, Any]:
         """Execute one optimization cycle."""
+        async with _get_runtime_lock():
+            return await self._run_cycle_locked()
+
+    async def _run_cycle_locked(self) -> Dict[str, Any]:
+        """Execute one optimization cycle (caller must hold _runtime_lock)."""
         self._cycle_count += 1
         log.info("cycle_start", cycle=self._cycle_count)
 
@@ -210,7 +272,7 @@ class ChainCommandOrchestrator:
 
         # Step 1: Anomaly detection
         if _runtime.anomaly_detector and _runtime.demand_df is not None:
-            anomalies = _runtime.anomaly_detector.detect(products[:10])
+            anomalies = _runtime.anomaly_detector.detect_batch(products[:10])
             results["anomalies"] = len(anomalies) if anomalies else 0
 
         # Step 2: Risk scoring for suppliers
@@ -303,6 +365,7 @@ class ChainCommandOrchestrator:
         # Step 6: KPI update
         snapshot = _runtime.kpi_engine.calculate_snapshot(
             products, _runtime.purchase_orders, suppliers,
+            forecaster=_runtime.forecaster,
         )
         violations = _runtime.kpi_engine.check_thresholds(snapshot)
         for event in violations:
@@ -320,9 +383,42 @@ class ChainCommandOrchestrator:
                 suppliers=suppliers,
             )
 
+        # Fulfill purchase orders whose lead time has elapsed
+        now = datetime.now(UTC)
+        product_map = {p.product_id: p for p in products}
+        fulfilled_count = 0
+        for po in _runtime.purchase_orders:
+            if po.status in (OrderStatus.PENDING, OrderStatus.APPROVED, OrderStatus.SHIPPED):
+                # Determine if enough time has passed since PO creation
+                created = po.created_at
+                if created.tzinfo is None:
+                    created = created.replace(tzinfo=UTC)
+                # Use expected_delivery if set, otherwise estimate from lead_time
+                if po.expected_delivery:
+                    delivery = po.expected_delivery
+                    if delivery.tzinfo is None:
+                        delivery = delivery.replace(tzinfo=UTC)
+                else:
+                    # Estimate delivery based on supplier lead time
+                    supplier = next(
+                        (s for s in suppliers if s.supplier_id == po.supplier_id), None
+                    )
+                    lead_days = supplier.lead_time_mean if supplier else 7.0
+                    delivery = created + timedelta(days=lead_days)
+
+                if now >= delivery:
+                    product = product_map.get(po.product_id)
+                    if product:
+                        product.current_stock += po.quantity
+                        fulfilled_count += 1
+                    po.status = OrderStatus.DELIVERED
+
+        if fulfilled_count:
+            log.info("po_fulfilled", count=fulfilled_count)
+
         # Simulate demand consumption
         for p in products:
-            consumed = max(0, random.gauss(p.daily_demand_avg, p.daily_demand_std))
+            consumed = max(0, self._rng.gauss(p.daily_demand_avg, p.daily_demand_std))
             p.current_stock = max(0, p.current_stock - consumed)
 
         results["kpi"] = snapshot.model_dump()
@@ -332,29 +428,64 @@ class ChainCommandOrchestrator:
         log.info("cycle_complete", cycle=self._cycle_count, violations=len(violations))
         return results
 
+    async def start_loop(self) -> bool:
+        """Start the simulation loop once."""
+        async with self._loop_lock:
+            if not self._initialized:
+                return False
+            if self._loop_task and not self._loop_task.done():
+                return False
+            if self._running:
+                return False
+            self._running = True
+            self._loop_task = asyncio.create_task(self.run_loop())
+            return True
+
     async def run_loop(self) -> None:
         """Run continuous optimization cycles."""
+        current_task = asyncio.current_task()
+        if current_task and self._loop_task is None:
+            self._loop_task = current_task
         self._running = True
         if _runtime.monitor:
             await _runtime.monitor.start()
 
         log.info("simulation_loop_started")
-        while self._running:
-            try:
-                await self.run_cycle()
-                interval = settings.event_tick_seconds * 2 / max(settings.simulation_speed, 0.1)
-                await asyncio.sleep(interval)
-            except asyncio.CancelledError:
-                break
-            except Exception as exc:
-                log.error("cycle_error", error=str(exc), exc_type=type(exc).__name__)
-                await asyncio.sleep(5)
+        try:
+            while self._running:
+                try:
+                    await self.run_cycle()
+                    speed = _runtime.runtime_config.get("simulation_speed", settings.simulation_speed)
+                    speed = max(settings.simulation_speed_min, min(speed, settings.simulation_speed_max))
+                    interval = settings.event_tick_seconds * 2 / speed
+                    await asyncio.sleep(interval)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    log.error("cycle_error", error=str(exc), exc_type=type(exc).__name__)
+                    await asyncio.sleep(5)
+        except asyncio.CancelledError:
+            log.info("simulation_loop_cancelled")
+            raise
+        finally:
+            self._running = False
+            if _runtime.monitor:
+                await _runtime.monitor.stop()
+            if current_task is None or self._loop_task is current_task:
+                self._loop_task = None
 
     async def stop_loop(self) -> None:
         """Stop the simulation loop."""
-        self._running = False
-        if self._loop_task:
-            self._loop_task.cancel()
+        async with self._loop_lock:
+            self._running = False
+            task = self._loop_task
+            if task and not task.done():
+                task.cancel()
+        if task and not task.done():
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
         log.info("simulation_loop_stopped")
 
     async def run_demo(self) -> Dict[str, Any]:
@@ -366,6 +497,15 @@ class ChainCommandOrchestrator:
 
     async def shutdown(self) -> None:
         """Clean shutdown of all components."""
+        async with _get_runtime_lock():
+            await self._shutdown_locked()
+
+    async def _shutdown_locked(self) -> None:
+        """Clean shutdown of all components (caller must hold _runtime_lock)."""
+        if not self._initialized and not _runtime.backend and not _runtime.monitor and not _runtime.event_bus:
+            log.info("shutdown_skipped_not_initialized")
+            return
+
         self._running = False
         if _runtime.backend:
             await _runtime.backend.teardown()
@@ -373,17 +513,23 @@ class ChainCommandOrchestrator:
             await _runtime.monitor.stop()
         if _runtime.event_bus:
             await _runtime.event_bus.stop()
+        self._loop_task = None
+        self._initialized = False
+        _reset_runtime_state()
         log.info("system_shutdown")
 
 
 # ── Singleton ───────────────────────────────────────────────
 
 _orchestrator: Optional[ChainCommandOrchestrator] = None
+_orchestrator_lock = threading.Lock()
 
 
 def get_orchestrator() -> ChainCommandOrchestrator:
-    """Get or create the orchestrator singleton."""
+    """Get or create the orchestrator singleton (thread-safe)."""
     global _orchestrator
     if _orchestrator is None:
-        _orchestrator = ChainCommandOrchestrator()
+        with _orchestrator_lock:
+            if _orchestrator is None:
+                _orchestrator = ChainCommandOrchestrator()
     return _orchestrator

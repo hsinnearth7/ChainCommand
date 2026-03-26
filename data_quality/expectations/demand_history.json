@@ -8,12 +8,17 @@
   },
   "expectations": [
     {
-      "expectation_type": "expect_table_columns_to_match_ordered_list",
+      "expectation_type": "expect_table_columns_to_match_set",
       "kwargs": {
-        "column_list": ["date", "product_id", "demand", "region", "channel"]
+        "column_set": [
+          "date", "product_id", "quantity",
+          "is_promotion", "is_holiday", "temperature",
+          "day_of_week", "month"
+        ],
+        "exact_match": false
       },
       "meta": {
-        "notes": "Ensure all required columns are present in the correct order"
+        "notes": "Columns aligned with DemandRecord schema and sample_demand_df fixture"
       }
     },
     {
@@ -31,7 +36,7 @@
     {
       "expectation_type": "expect_column_values_to_not_be_null",
       "kwargs": {
-        "column": "demand"
+        "column": "quantity"
       }
     },
     {
@@ -44,7 +49,7 @@
     {
       "expectation_type": "expect_column_values_to_be_of_type",
       "kwargs": {
-        "column": "demand",
+        "column": "quantity",
         "type_": "float64"
       }
     },
@@ -58,13 +63,13 @@
     {
       "expectation_type": "expect_column_values_to_be_between",
       "kwargs": {
-        "column": "demand",
+        "column": "quantity",
         "min_value": 0,
         "max_value": null,
         "strict_min": false
       },
       "meta": {
-        "notes": "Demand must be non-negative"
+        "notes": "Demand quantity must be non-negative"
       }
     },
     {
@@ -86,14 +91,26 @@
         "regex": "^[A-Z]{2,4}-\\d{3,6}$"
       },
       "meta": {
-        "notes": "Product IDs follow pattern like SKU-12345 or PROD-001"
+        "notes": "Product IDs follow pattern like PRD-0001 or SKU-12345"
       }
     },
     {
-      "expectation_type": "expect_column_values_to_be_in_set",
+      "expectation_type": "expect_column_values_to_be_between",
       "kwargs": {
-        "column": "channel",
-        "value_set": ["online", "retail", "wholesale", "direct"]
+        "column": "day_of_week",
+        "min_value": 0,
+        "max_value": 6
+      },
+      "meta": {
+        "notes": "day_of_week: 0=Monday through 6=Sunday"
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": {
+        "column": "month",
+        "min_value": 1,
+        "max_value": 12
       }
     },
     {

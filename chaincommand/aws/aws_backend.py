@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from datetime import datetime, timezone
 
@@ -9,6 +10,7 @@ import pandas as pd
 
 from ..config import settings
 from ..data.schemas import KPISnapshot
+from ..kpi.engine import ALLOWED_KPI_METRICS
 from ..utils.logging_config import get_logger
 from .athena_client import AthenaClient
 from .backend import PersistenceBackend
@@ -31,25 +33,33 @@ class AWSBackend(PersistenceBackend):
     async def setup(self) -> None:
         """Initialize all AWS clients and create required tables."""
         log.info("aws_backend_setup_start")
+        try:
+            self._s3 = S3Client()
+            self._redshift = RedshiftClient()
+            self._athena = AthenaClient()
+            self._quicksight = QuickSightClient()
 
-        self._s3 = S3Client()
-        self._redshift = RedshiftClient()
-        self._athena = AthenaClient()
-        self._quicksight = QuickSightClient()
+            # Redshift: create tables (sync I/O — run off event loop)
+            await asyncio.to_thread(self._redshift.create_tables)
 
-        # Redshift: create tables
-        self._redshift.create_tables()
+            # Athena: create database + external tables
+            await self._athena.create_database()
+            await self._athena.create_external_tables()
 
-        # Athena: create database + external tables
-        self._athena.create_database()
-        self._athena.create_external_tables()
-
-        log.info("aws_backend_setup_complete")
+            log.info("aws_backend_setup_complete")
+        except Exception:
+            log.exception("aws_backend_setup_failed")
+            raise
 
     async def teardown(self) -> None:
-        """Close Redshift connection."""
+        """Close all AWS client connections."""
         if self._redshift:
-            self._redshift.close()
+            await asyncio.to_thread(self._redshift.close)
+        # boto3 clients (S3, Athena, QuickSight) don't hold persistent
+        # connections, but nullify references for cleanliness.
+        self._s3 = None
+        self._athena = None
+        self._quicksight = None
         log.info("aws_backend_teardown")
 
     async def persist_cycle(
@@ -62,16 +72,22 @@ class AWSBackend(PersistenceBackend):
         suppliers: list,
     ) -> None:
         """Persist one cycle's data to S3 and Redshift."""
+        if self._s3 is None or self._redshift is None:
+            raise RuntimeError(
+                "AWSBackend.persist_cycle called before setup() — "
+                "S3 or Redshift client is None"
+            )
+
         now = datetime.now(timezone.utc)
         date_path = f"{now.year:04d}/{now.month:02d}/{now.day:02d}"
         prefix = settings.aws_s3_prefix.rstrip("/")
 
-        # ── S3: upload JSONL ──
+        # ── S3: upload JSONL (sync boto3 calls — run off event loop) ──
         # KPI snapshot
-        kpi_key = f"{prefix}/kpi_snapshots/{date_path}/cycle_{cycle}.json"
+        kpi_key = f"{prefix}/kpi_snapshots/{date_path}/cycle_{cycle}.jsonl"
         kpi_data = kpi.model_dump()
         kpi_data["cycle"] = cycle
-        self._s3.upload_json(kpi_data, kpi_key)
+        await asyncio.to_thread(self._s3.upload_jsonl, [kpi_data], kpi_key)
 
         # Events
         if events:
@@ -79,7 +95,7 @@ class AWSBackend(PersistenceBackend):
             event_records = [
                 e.model_dump() if hasattr(e, "model_dump") else e for e in events
             ]
-            self._s3.upload_jsonl(event_records, events_key)
+            await asyncio.to_thread(self._s3.upload_jsonl, event_records, events_key)
 
         # Purchase orders
         if pos:
@@ -87,29 +103,50 @@ class AWSBackend(PersistenceBackend):
             po_records = [
                 p.model_dump() if hasattr(p, "model_dump") else p for p in pos
             ]
-            self._s3.upload_jsonl(po_records, pos_key)
+            await asyncio.to_thread(self._s3.upload_jsonl, po_records, pos_key)
+
+        # Log when products/suppliers are provided but not persisted
+        if products:
+            log.warning(
+                "aws_persist_cycle_products_not_persisted",
+                cycle=cycle, count=len(products),
+            )
+        if suppliers:
+            log.warning(
+                "aws_persist_cycle_suppliers_not_persisted",
+                cycle=cycle, count=len(suppliers),
+            )
 
         # ── Redshift: direct INSERT for KPI (fast, single row) ──
-        self._redshift.insert_kpi_snapshot(cycle, kpi)
+        await asyncio.to_thread(self._redshift.insert_kpi_snapshot, cycle, kpi)
 
         log.info("aws_persist_cycle", cycle=cycle)
 
     async def persist_demand_history(self, df: pd.DataFrame) -> None:
         """Upload demand history DataFrame to S3 as Parquet."""
+        if self._s3 is None:
+            raise RuntimeError(
+                "AWSBackend.persist_demand_history called before setup() — "
+                "S3 client is None"
+            )
         prefix = settings.aws_s3_prefix.rstrip("/")
         key = f"{prefix}/demand_history/full_history.parquet"
-        self._s3.upload_dataframe(df, key)
+        await asyncio.to_thread(self._s3.upload_dataframe, df, key)
         log.info("aws_persist_demand_history", rows=len(df))
 
     async def query_kpi_trend(self, metric: str, days: int) -> list:
         """Query KPI trend from Redshift."""
-        allowed = {
-            "otif", "fill_rate", "mape", "dsi", "stockout_count",
-            "total_inventory_value", "carrying_cost", "order_cycle_time",
-            "perfect_order_rate", "inventory_turnover", "backorder_rate",
-            "supplier_defect_rate",
-        }
-        if metric not in allowed:
+        if self._redshift is None:
+            raise RuntimeError(
+                "AWSBackend.query_kpi_trend called before setup() — "
+                "Redshift client is None"
+            )
+        if metric not in ALLOWED_KPI_METRICS:
+            return []
+
+        # Belt-and-suspenders: regex check even after allowlist
+        if not re.match(r'^[a-z_]+$', metric):
+            log.warning("query_kpi_trend_rejected_metric", metric=metric)
             return []
 
         safe_days = max(1, min(int(days), 365))
@@ -119,19 +156,24 @@ class AWSBackend(PersistenceBackend):
             f"WHERE timestamp >= DATEADD(day, -{safe_days}, GETDATE()) "
             f"ORDER BY cycle"
         )
-        return self._redshift.query(sql)
+        return await asyncio.to_thread(self._redshift.query, sql)
 
     async def query_events(self, event_type: str, limit: int) -> list:
-        """Query events from Athena (ad-hoc on S3)."""
-        # Strict validation: only alphanumeric, underscores, dots
-        if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_.]*$', event_type):
-            return []
+        """Query events from Athena (ad-hoc on S3).
+
+        Uses parameterized query to prevent SQL injection.
+        """
+        if self._athena is None:
+            raise RuntimeError(
+                "AWSBackend.query_events called before setup() — "
+                "Athena client is None"
+            )
         safe_limit = max(1, min(int(limit), 500))
         sql = (
-            f"SELECT event_id, timestamp, event_type, severity, source_agent, description "  # noqa: S608
-            f"FROM events "
-            f"WHERE event_type = '{event_type}' "
-            f"ORDER BY timestamp DESC "
-            f"LIMIT {safe_limit}"
+            "SELECT event_id, timestamp, event_type, severity, source_agent, description "
+            "FROM events "
+            "WHERE event_type = ? "
+            "ORDER BY timestamp DESC "
+            "LIMIT ?"
         )
-        return self._athena.run_query(sql)
+        return await self._athena.run_query(sql, params=[event_type, safe_limit])
